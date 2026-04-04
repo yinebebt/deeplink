@@ -1,0 +1,41 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - nestif
+    - nilerr
+    - tagliatelle
+    - unparam
+    - nilnil
+    - predeclared
+    - prealloc
+    - reassign
+    - contextcheck
+    - goconst
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+    tagliatelle:
+      case:
+        use-field-name: true
+        rules:
+          json: snake
+    exhaustive:
+      default-signifies-exhaustive: true
+
+formatters:
+  enable:
+    - gofmt
+
+output:
+  show-stats: false

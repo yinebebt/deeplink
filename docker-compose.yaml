@@ -1,0 +1,12 @@
+services:
+  redis:
+    image: redis:8.4-alpine
+    container_name: deeplink-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+
+volumes:
+  redis-data:

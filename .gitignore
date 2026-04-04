@@ -1,0 +1,9 @@
+.idea/
+.vscode/
+.env
+*.xml
+
+# Build artifacts
+/deeplink
+/cmd/deeplink/deeplink
+/example/custom/custom
