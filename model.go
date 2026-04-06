@@ -29,20 +29,20 @@ type Link struct {
 }
 
 // Meta returns a metadata value as a string, or "" if missing or not a string.
-func (p *Link) Meta(key string) string {
-	if p.Metadata == nil {
+func (l *Link) Meta(key string) string {
+	if l.Metadata == nil {
 		return ""
 	}
-	s, _ := p.Metadata[key].(string)
+	s, _ := l.Metadata[key].(string)
 	return s
 }
 
 // SetMeta sets a metadata key, initializing the map if needed.
-func (p *Link) SetMeta(key string, value any) {
-	if p.Metadata == nil {
-		p.Metadata = make(map[string]any)
+func (l *Link) SetMeta(key string, value any) {
+	if l.Metadata == nil {
+		l.Metadata = make(map[string]any)
 	}
-	p.Metadata[key] = value
+	l.Metadata[key] = value
 }
 
 // LinkInfo is the response type for link list and detail endpoints.

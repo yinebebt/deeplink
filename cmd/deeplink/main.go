@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -59,22 +60,28 @@ func run() error {
 		return fmt.Errorf("ping redis: %w", err)
 	}
 
+	clickBufSize, _ := strconv.Atoi(env("DEEPLINK_CLICK_BUFFER_SIZE", "0"))
+	clickFlushInterval, _ := time.ParseDuration(env("DEEPLINK_CLICK_FLUSH_INTERVAL", "0"))
+
 	cfg := deeplink.Config{
-		BaseURL:         baseURL,
-		Store:           deeplink.NewRedisStore(redisClient),
-		Logger:          logger,
-		TemplateDir:     templateDir,
-		SkipPaths:       skipPaths,
-		AllowedOrigins:  splitCommaList(os.Getenv("DEEPLINK_ALLOWED_ORIGINS")),
-		AndroidStoreURL: os.Getenv("DEEPLINK_ANDROID_STORE_URL"),
-		IOSStoreURL:     os.Getenv("DEEPLINK_IOS_STORE_URL"),
-		WebFallbackURL:  os.Getenv("DEEPLINK_WEB_FALLBACK_URL"),
+		BaseURL:            baseURL,
+		Store:              deeplink.NewRedisStore(redisClient),
+		Logger:             logger,
+		TemplateDir:        templateDir,
+		SkipPaths:          skipPaths,
+		AllowedOrigins:     splitCommaList(os.Getenv("DEEPLINK_ALLOWED_ORIGINS")),
+		ClickBufferSize:    clickBufSize,
+		ClickFlushInterval: clickFlushInterval,
+		AndroidStoreURL:    os.Getenv("DEEPLINK_ANDROID_STORE_URL"),
+		IOSStoreURL:        os.Getenv("DEEPLINK_IOS_STORE_URL"),
+		WebFallbackURL:     os.Getenv("DEEPLINK_WEB_FALLBACK_URL"),
 	}
 
 	service, err := deeplink.New(cfg)
 	if err != nil {
 		return err
 	}
+	defer service.Close() //nolint:errcheck
 	service.Register(deeplink.RedirectProcessor{})
 
 	server := &http.Server{

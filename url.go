@@ -52,9 +52,7 @@ func (s *Service) expandURL(ctx context.Context, shortID string) (*Link, error) 
 		return nil, fmt.Errorf("expand URL %s: %w", shortID, err)
 	}
 
-	if _, err := s.config.Store.IncrClick(ctx, shortID); err != nil {
-		s.config.Logger.Warn("failed to increment click counter", "error", err, "shortID", shortID)
-	}
+	s.clicks.track(shortID)
 
 	return payload, nil
 }

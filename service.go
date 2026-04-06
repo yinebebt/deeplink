@@ -13,6 +13,7 @@ import (
 type Service struct {
 	config       Config
 	registry     *Registry
+	clicks       *clickTracker
 	skipPatterns []*regexp.Regexp
 	templates    map[string]*template.Template
 }
@@ -41,6 +42,7 @@ func New(cfg Config) (*Service, error) {
 	return &Service{
 		config:       cfg,
 		registry:     NewRegistry(),
+		clicks:       newClickTracker(cfg.Store, cfg.Logger, cfg.ClickBufferSize, cfg.ClickFlushInterval),
 		skipPatterns: patterns,
 		templates:    templates,
 	}, nil
@@ -57,8 +59,9 @@ func (s *Service) Config() Config {
 }
 
 // Close releases resources held by the service.
-// If the default HTTP client was created by [New], its transport is closed.
+// It drains any buffered click events and closes the HTTP transport.
 func (s *Service) Close() error {
+	s.clicks.stop()
 	if t, ok := s.config.HTTPClient.Transport.(*http.Transport); ok {
 		t.CloseIdleConnections()
 	}

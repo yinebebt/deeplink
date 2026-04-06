@@ -43,6 +43,14 @@ type Config struct {
 	// AllowedOrigins for CORS. Empty means no CORS headers.
 	AllowedOrigins []string
 
+	// ClickBufferSize is the capacity of the async click event channel.
+	// Default: 1024.
+	ClickBufferSize int
+
+	// ClickFlushInterval controls how often buffered clicks are flushed
+	// to the store. Default: 1s.
+	ClickFlushInterval time.Duration
+
 	// AndroidStoreURL, IOSStoreURL, and WebFallbackURL enable the
 	// /redirect, /preview/, and /.well-known/ routes when any is set.
 	AndroidStoreURL string
@@ -62,6 +70,12 @@ func (c *Config) defaults() {
 	}
 	if c.Logger == nil {
 		c.Logger = slog.Default()
+	}
+	if c.ClickBufferSize == 0 {
+		c.ClickBufferSize = 1024
+	}
+	if c.ClickFlushInterval == 0 {
+		c.ClickFlushInterval = time.Second
 	}
 	if c.HTTPClient == nil {
 		c.HTTPClient = &http.Client{

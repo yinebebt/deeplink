@@ -16,7 +16,7 @@ func main() {
 		port = "8080"
 	}
 
-	svc, err := deeplink.New(deeplink.Config{
+	service, err := deeplink.New(deeplink.Config{
 		BaseURL:     "http://localhost:" + port,
 		Store:       deeplink.NewMemoryStore(),
 		TemplateDir: "templates/default",
@@ -25,12 +25,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	svc.Register(deeplink.RedirectProcessor{})
-	svc.Register(telegramProcessor{})
+	service.Register(deeplink.RedirectProcessor{})
+	service.Register(telegramProcessor{})
 
 	// Mount the deeplink handler alongside your own routes.
 	mux := http.NewServeMux()
-	mux.Handle("/", svc.Handler())
+	mux.Handle("/", service.Handler())
 	mux.HandleFunc("GET /hello", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("your app routes work alongside deeplink"))
 	})

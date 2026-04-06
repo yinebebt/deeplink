@@ -109,6 +109,11 @@ func TestHandlerGenerateAndPreviewRedirect(t *testing.T) {
 		t.Fatalf("redirect location = %q, want %q", location, "https://example.com/products/123")
 	}
 
+	// Flush async click buffer before checking count.
+	if err := service.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
 	clicks, err := store.Clicks(context.Background(), shortID)
 	if err != nil {
 		t.Fatalf("Clicks() error = %v", err)

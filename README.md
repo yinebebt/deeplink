@@ -16,7 +16,7 @@ go get github.com/yinebebt/deeplink
 ## Usage
 
 ```go
-svc, err := deeplink.New(deeplink.Config{
+service, err := deeplink.New(deeplink.Config{
     BaseURL:     "https://link.example.com",
     Store:       deeplink.NewMemoryStore(),
     TemplateDir: "templates/default",
@@ -24,11 +24,11 @@ svc, err := deeplink.New(deeplink.Config{
 if err != nil {
     log.Fatal(err)
 }
-svc.Register(deeplink.RedirectProcessor{})
+service.Register(deeplink.RedirectProcessor{})
 
 // Mount alongside your own routes.
 mux := http.NewServeMux()
-mux.Handle("/", svc.Handler())
+mux.Handle("/", service.Handler())
 mux.HandleFunc("GET /hello", yourHandler)
 
 log.Fatal(http.ListenAndServe(":8090", mux))
@@ -108,6 +108,8 @@ Environment variables for `cmd/deeplink`:
 | `DEEPLINK_ALLOWED_ORIGINS` | | CORS origins (comma-separated) |
 | `DEEPLINK_TEMPLATE_DIR` | `templates/default` | Template directory |
 | `DEEPLINK_SKIP_PATHS_FILE` | | Skip-path regex file |
+| `DEEPLINK_CLICK_BUFFER_SIZE` | `1024` | Async click event buffer capacity |
+| `DEEPLINK_CLICK_FLUSH_INTERVAL` | `1s` | How often buffered clicks are flushed to the store |
 
 ## Templates
 
