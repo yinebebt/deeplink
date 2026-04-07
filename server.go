@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -106,7 +105,7 @@ func (s *Service) handlePreview(w http.ResponseWriter, r *http.Request) {
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, previewData); err != nil {
 		s.config.Logger.Error("template execution failed", "error", err, "shortID", shortID)
-		http.Error(w, fmt.Sprintf("render error: %v", err), http.StatusInternalServerError)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -144,7 +143,7 @@ func (s *Service) handleStaticPreview(w http.ResponseWriter, r *http.Request) {
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, previewData); err != nil {
 		s.config.Logger.Error("template execution failed", "error", err, "shortID", shortID)
-		http.Error(w, fmt.Sprintf("render error: %v", err), http.StatusInternalServerError)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -295,7 +294,7 @@ func (s *Service) withCORS(h http.HandlerFunc) http.HandlerFunc {
 		origin := r.Header.Get("Origin")
 		if allowed[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		}
 		if r.Method == http.MethodOptions {

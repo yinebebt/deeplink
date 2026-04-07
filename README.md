@@ -110,6 +110,7 @@ Environment variables for `cmd/deeplink`:
 | `DEEPLINK_SKIP_PATHS_FILE` | | Skip-path regex file |
 | `DEEPLINK_CLICK_BUFFER_SIZE` | `1024` | Async click event buffer capacity |
 | `DEEPLINK_CLICK_FLUSH_INTERVAL` | `1s` | How often buffered clicks are flushed to the store |
+| `DEEPLINK_API_KEY` | | Protect mutating endpoints (`Authorization: Bearer <key>` or `X-API-Key: <key>`) |
 
 ## Templates
 

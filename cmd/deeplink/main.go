@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -84,9 +85,15 @@ func run() error {
 	defer service.Close() //nolint:errcheck
 	service.Register(deeplink.RedirectProcessor{})
 
+	handler := service.Handler()
+	if apiKey := os.Getenv("DEEPLINK_API_KEY"); apiKey != "" {
+		handler = withAPIKey(handler, apiKey)
+		logger.Info("API key protection enabled for mutating endpoints")
+	}
+
 	server := &http.Server{
 		Addr:         listenAddr,
-		Handler:      service.Handler(),
+		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -159,6 +166,26 @@ func discoverTemplateDir(configured string) string {
 		return dir
 	}
 	return ""
+}
+
+// withAPIKey protects POST requests with a constant-time token check.
+// Accepts both "Authorization: Bearer <key>" and "X-API-Key: <key>".
+// GET routes (redirects, previews, dashboard) are not affected.
+func withAPIKey(next http.Handler, key string) http.Handler {
+	keyBytes := []byte(key)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			token := r.Header.Get("X-API-Key")
+			if token == "" {
+				token = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+			}
+			if subtle.ConstantTimeCompare([]byte(token), keyBytes) != 1 {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func loadSkipPaths(configured string) ([]string, error) {
