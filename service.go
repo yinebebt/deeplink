@@ -58,6 +58,11 @@ func (s *Service) Config() Config {
 	return s.config
 }
 
+// Types returns all registered processor type names.
+func (s *Service) Types() []string {
+	return s.registry.Types()
+}
+
 // Close releases resources held by the service.
 // It drains any buffered click events and closes the HTTP transport.
 func (s *Service) Close() error {

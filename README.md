@@ -84,6 +84,12 @@ go run ./cmd/deeplink
 | GET | `/links/{type}/{shortID}` | Link detail with click count |
 | GET | `/health` | Health check |
 
+The standalone server (`cmd/deeplink`) also registers:
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/dashboard` | Read-only link stats page (requires `dashboard.html` in template dir) |
+
 When any store URL is set (`AndroidStoreURL`, `IOSStoreURL`, `WebFallbackURL`), these are also registered:
 
 | Method | Path | Description |

@@ -3,6 +3,7 @@ package deeplink
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 )
 
@@ -57,5 +58,6 @@ func (r *Registry) Types() []string {
 	for t := range r.processors {
 		types = append(types, t)
 	}
+	slices.Sort(types)
 	return types
 }

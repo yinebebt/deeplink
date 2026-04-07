@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>deeplink</title>
+    <meta name="description" content="Short link dashboard powered by deeplink">
+    <meta property="og:title" content="deeplink dashboard">
+    <meta property="og:description" content="Short link generation, click tracking, and OG preview pages.">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #09090b;
+            --surface: #18181b;
+            --border: #27272a;
+            --border-hover: #3f3f46;
+            --text: #fafafa;
+            --text-muted: #a1a1aa;
+            --text-dim: #52525b;
+            --accent: #3b82f6;
+            --accent-hover: #60a5fa;
+            --mono: "SF Mono", "Cascadia Code", "Fira Code", "JetBrains Mono", ui-monospace, monospace;
+            --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+        }
+
+        body {
+            font-family: var(--sans);
+            background: var(--bg);
+            color: var(--text-muted);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        main { flex: 1; }
+
+        .container {
+            width: 100%;
+            max-width: 680px;
+            margin: 0 auto;
+            padding: 0 1.25rem;
+        }
+
+        /* ── Header ── */
+        header {
+            padding: 3rem 0 0;
+            margin-bottom: 2rem;
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.625rem;
+            margin-bottom: 0.375rem;
+        }
+        .brand-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            background: var(--accent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .brand-icon svg { width: 16px; height: 16px; }
+        h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text);
+            letter-spacing: -0.025em;
+        }
+        .subtitle {
+            font-size: 0.8125rem;
+            color: var(--text-dim);
+        }
+
+        /* ── Stats ── */
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+            margin-bottom: 2rem;
+        }
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1.125rem 1.25rem;
+        }
+        .stat-label {
+            font-size: 0.6875rem;
+            font-weight: 500;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 0.25rem;
+        }
+        .stat-value {
+            font-family: var(--mono);
+            font-size: 1.875rem;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: -0.04em;
+            line-height: 1.1;
+        }
+
+        /* ── Table ── */
+        .section-label {
+            font-size: 0.6875rem;
+            font-weight: 500;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 0.75rem;
+        }
+        .link-table {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .link-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.75rem 1.125rem;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.1s ease;
+        }
+        .link-row:last-child { border-bottom: none; }
+        .link-row:hover { background: #1f1f23; }
+        .link-path {
+            font-family: var(--mono);
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: var(--accent);
+            text-decoration: none;
+            transition: color 0.1s ease;
+        }
+        .link-path:hover { color: var(--accent-hover); }
+        .link-dest {
+            font-size: 0.6875rem;
+            color: var(--text-dim);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            margin-top: 0.125rem;
+        }
+        .click-badge {
+            font-family: var(--mono);
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            background: var(--bg);
+            padding: 0.25rem 0.625rem;
+            border-radius: 100px;
+            white-space: nowrap;
+        }
+        .empty-state {
+            padding: 3rem 1rem;
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 0.875rem;
+        }
+
+        /* ── Footer ── */
+        footer {
+            padding: 2rem 0;
+            margin-top: 3rem;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            font-size: 0.6875rem;
+            color: var(--text-dim);
+        }
+        footer a {
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: color 0.1s ease;
+        }
+        footer a:hover { color: var(--text); }
+
+        /* ── Responsive ── */
+        @media (max-width: 480px) {
+            .stats { grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+            .stat-value { font-size: 1.5rem; }
+            .link-row { padding: 0.625rem 0.875rem; }
+            .link-dest { max-width: 200px; }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <div class="container">
+            <header>
+                <div class="brand">
+                    <div class="brand-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                        </svg>
+                    </div>
+                    <h1>deeplink</h1>
+                </div>
+                <p class="subtitle">Short link dashboard</p>
+            </header>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-label">Links</div>
+                    <div class="stat-value">{{.TotalLinks}}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total clicks</div>
+                    <div class="stat-value">{{.TotalClicks}}</div>
+                </div>
+            </div>
+
+            {{if .Links}}
+            <div class="section-label">All links</div>
+            <div class="link-table">
+                {{range .Links}}
+                <div class="link-row">
+                    <div>
+                        <a class="link-path" href="{{.ShortLink}}">{{.ShortID}}</a>
+                        <div class="link-dest" title="{{.URL}}">{{.URL}}</div>
+                    </div>
+                    <div class="click-badge">{{.Clicks}}</div>
+                </div>
+                {{end}}
+            </div>
+            {{else}}
+            <div class="link-table">
+                <div class="empty-state">No links yet. Create one with POST /shorten.</div>
+            </div>
+            {{end}}
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            powered by <a href="https://github.com/yinebebt/deeplink">deeplink</a>
+        </div>
+    </footer>
+</body>
+</html>
