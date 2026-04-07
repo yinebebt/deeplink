@@ -68,7 +68,7 @@ func (s *RedisStore) Clicks(ctx context.Context, id string) (int64, error) {
 	return n, err
 }
 
-func (s *RedisStore) List(ctx context.Context, linkType, environment string, cursor uint64, count int64) ([]LinkInfo, uint64, error) {
+func (s *RedisStore) List(ctx context.Context, linkType string, cursor uint64, count int64) ([]LinkInfo, uint64, error) {
 	scanCount := max(count, 100)
 
 	keys, nextCursor, err := s.client.Scan(ctx, cursor, s.scanPattern(), scanCount).Result()
@@ -118,7 +118,7 @@ func (s *RedisStore) List(ctx context.Context, linkType, environment string, cur
 			continue
 		}
 
-		if p.Type == linkType && p.Environment == environment {
+		if p.Type == linkType {
 			clicks, _ := clickCmds[key].Int64()
 			links = append(links, LinkInfo{
 				ShortLink: s.stripPrefix(key),

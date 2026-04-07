@@ -60,7 +60,7 @@ func (s *MemoryStore) Clicks(_ context.Context, id string) (int64, error) {
 	return s.clicks[id], nil
 }
 
-func (s *MemoryStore) List(_ context.Context, linkType, environment string, cursor uint64, count int64) ([]LinkInfo, uint64, error) {
+func (s *MemoryStore) List(_ context.Context, linkType string, cursor uint64, count int64) ([]LinkInfo, uint64, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -70,7 +70,7 @@ func (s *MemoryStore) List(_ context.Context, linkType, environment string, curs
 
 	ids := make([]string, 0, len(s.payload))
 	for id, payload := range s.payload {
-		if payload.Type == linkType && payload.Environment == environment {
+		if payload.Type == linkType {
 			ids = append(ids, id)
 		}
 	}

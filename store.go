@@ -12,10 +12,10 @@ type Store interface {
 	IncrClick(ctx context.Context, id string) (int64, error)
 	// Clicks returns the current click count for id.
 	Clicks(ctx context.Context, id string) (int64, error)
-	// List returns links matching linkType and environment.
+	// List returns links matching linkType.
 	// Pass cursor 0 to start. The returned cursor is 0 when there are
 	// no more results. Cursor values are opaque and store-specific;
 	// do not assume sequential offsets.
 	// Returned [LinkInfo.ShortLink] values contain only the short ID (no base URL).
-	List(ctx context.Context, linkType, environment string, cursor uint64, count int64) ([]LinkInfo, uint64, error)
+	List(ctx context.Context, linkType string, cursor uint64, count int64) ([]LinkInfo, uint64, error)
 }

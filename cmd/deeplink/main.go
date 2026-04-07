@@ -238,7 +238,7 @@ func handleDashboard(service *deeplink.Service, tmpl *template.Template, logger 
 		for _, linkType := range service.Types() {
 			var cursor uint64
 			for {
-				links, next, err := cfg.Store.List(r.Context(), linkType, cfg.DefaultEnvironment, cursor, 100)
+				links, next, err := cfg.Store.List(r.Context(), linkType, cursor, 100)
 				if err != nil {
 					logger.Error("dashboard: failed to list links", "error", err, "type", linkType)
 					break

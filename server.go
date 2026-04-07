@@ -15,7 +15,7 @@ import (
 //
 //	POST /shorten          create a short link
 //	GET  /{shortID}              preview page (or 302 if no template)
-//	GET  /links/{type}           list links by type and environment
+//	GET  /links/{type}           list links by type
 //	GET  /links/{type}/{shortID} single link with click count
 //	GET  /health                 health check
 //
@@ -45,7 +45,6 @@ func (s *Service) Handler() http.Handler {
 
 func (s *Service) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	env := s.envFromRequest(r)
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
 	var payload Link
@@ -53,8 +52,6 @@ func (s *Service) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		s.respondError(w, NewError(err, http.StatusBadRequest, "invalid JSON payload"))
 		return
 	}
-
-	payload.Environment = env
 
 	processor := s.registry.Get(strings.ToLower(payload.Type))
 	if processor == nil {
@@ -69,18 +66,17 @@ func (s *Service) handleGenerate(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err := s.shortenURL(r.Context(), &payload)
 	if err != nil {
-		s.config.Logger.Error("failed to shorten URL", "error", err, "type", payload.Type, "env", env)
+		s.config.Logger.Error("failed to shorten URL", "error", err, "type", payload.Type)
 		s.respondError(w, NewError(err, http.StatusInternalServerError, "failed to shorten URL"))
 		return
 	}
 
 	respondJSON(w, http.StatusCreated, map[string]string{"short_url": shortURL})
-	s.config.Logger.Info("link generated", "shortID", strings.TrimPrefix(shortURL, s.config.BaseURL), "type", payload.Type, "env", env, "duration", time.Since(start))
+	s.config.Logger.Info("link generated", "shortID", strings.TrimPrefix(shortURL, s.config.BaseURL), "type", payload.Type, "duration", time.Since(start))
 }
 
 func (s *Service) handlePreview(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	env := s.envFromRequest(r)
 
 	shortID := r.PathValue("shortID")
 	if s.skipPath(shortID) {
@@ -90,7 +86,7 @@ func (s *Service) handlePreview(w http.ResponseWriter, r *http.Request) {
 
 	payload, err := s.expandURL(r.Context(), shortID)
 	if err != nil {
-		s.config.Logger.Error("failed to expand URL", "error", err, "shortID", shortID, "env", env)
+		s.config.Logger.Error("failed to expand URL", "error", err, "shortID", shortID)
 		http.NotFound(w, r)
 		return
 	}
@@ -113,7 +109,7 @@ func (s *Service) handlePreview(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(buf.Bytes())
-	s.config.Logger.Info("preview rendered", "shortID", shortID, "type", payload.Type, "env", env, "duration", time.Since(start))
+	s.config.Logger.Info("preview rendered", "shortID", shortID, "type", payload.Type, "duration", time.Since(start))
 }
 
 // handleStaticPreview renders a preview page without auto-redirect.
@@ -121,14 +117,13 @@ func (s *Service) handlePreview(w http.ResponseWriter, r *http.Request) {
 // flow where the user should tap to continue.
 func (s *Service) handleStaticPreview(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	env := s.envFromRequest(r)
 	w.Header().Set("Content-Type", "text/html")
 
 	shortID := r.PathValue("shortID")
 
 	payload, err := s.expandURL(r.Context(), shortID)
 	if err != nil {
-		s.config.Logger.Error("failed to expand URL", "error", err, "shortID", shortID, "env", env)
+		s.config.Logger.Error("failed to expand URL", "error", err, "shortID", shortID)
 		http.NotFound(w, r)
 		return
 	}
@@ -149,7 +144,7 @@ func (s *Service) handleStaticPreview(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(buf.Bytes())
-	s.config.Logger.Info("preview rendered (no redirect)", "shortID", shortID, "type", payload.Type, "env", env, "duration", time.Since(start))
+	s.config.Logger.Info("preview rendered (no redirect)", "shortID", shortID, "type", payload.Type, "duration", time.Since(start))
 }
 
 func (s *Service) handleRedirect(w http.ResponseWriter, r *http.Request) {
@@ -177,15 +172,14 @@ func (s *Service) handleRedirect(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) handleLinkList(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	env := s.envFromRequest(r)
 	linkType := r.PathValue("type")
 
 	var allLinks []LinkInfo
 	var cursor uint64
 	for {
-		links, next, err := s.config.Store.List(r.Context(), linkType, env, cursor, 100)
+		links, next, err := s.config.Store.List(r.Context(), linkType, cursor, 100)
 		if err != nil {
-			s.config.Logger.Error("failed to list links", "error", err, "type", linkType, "env", env)
+			s.config.Logger.Error("failed to list links", "error", err, "type", linkType)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -209,18 +203,17 @@ func (s *Service) handleLinkList(w http.ResponseWriter, r *http.Request) {
 		s.config.Logger.Error("failed to encode response", "error", err)
 	}
 
-	s.config.Logger.Info("links listed", "type", linkType, "count", len(allLinks), "env", env, "duration", time.Since(start))
+	s.config.Logger.Info("links listed", "type", linkType, "count", len(allLinks), "duration", time.Since(start))
 }
 
 func (s *Service) handleLinkDetail(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	env := s.envFromRequest(r)
 	linkType := r.PathValue("type")
 	shortID := r.PathValue("shortID")
 
 	payload, err := s.config.Store.Get(r.Context(), shortID)
 	if err != nil {
-		s.config.Logger.Warn("link not found", "shortId", shortID, "env", env)
+		s.config.Logger.Warn("link not found", "shortId", shortID)
 		http.Error(w, "link not found", http.StatusNotFound)
 		return
 	}
@@ -237,7 +230,7 @@ func (s *Service) handleLinkDetail(w http.ResponseWriter, r *http.Request) {
 		s.config.Logger.Error("failed to encode response", "error", err)
 	}
 
-	s.config.Logger.Info("link detail fetched", "shortId", shortID, "env", env, "duration", time.Since(start))
+	s.config.Logger.Info("link detail fetched", "shortId", shortID, "duration", time.Since(start))
 }
 
 func (s *Service) handleWellKnown(w http.ResponseWriter, r *http.Request) {
@@ -272,16 +265,6 @@ func (s *Service) buildPreviewData(payload *Link) any {
 		}
 	}
 	return payload
-}
-
-func (s *Service) envFromRequest(r *http.Request) string {
-	if env := r.Header.Get("X-Environment"); env != "" {
-		return env
-	}
-	if env := r.URL.Query().Get("environment"); env != "" {
-		return env
-	}
-	return s.config.DefaultEnvironment
 }
 
 func (s *Service) withCORS(h http.HandlerFunc) http.HandlerFunc {

@@ -19,8 +19,6 @@ type Link struct {
 	// ImageURL for the OG preview image.
 	ImageURL string `json:"image_url,omitempty"`
 
-	// Environment groups links (e.g. "dev", "staging", "production").
-	Environment string `json:"environment,omitempty"`
 	// CreatedAt is an RFC 3339 timestamp. Set by the service.
 	CreatedAt string `json:"created_at,omitempty"`
 

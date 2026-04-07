@@ -17,10 +17,6 @@ type Config struct {
 	// IDLength is the length of generated short IDs. Default: 17.
 	IDLength int
 
-	// DefaultEnvironment is used when no environment is specified
-	// in the request. Default: "dev".
-	DefaultEnvironment string
-
 	// Store is the persistence backend for links. Required.
 	Store Store
 
@@ -61,9 +57,6 @@ type Config struct {
 func (c *Config) defaults() {
 	if c.IDLength == 0 {
 		c.IDLength = 17
-	}
-	if c.DefaultEnvironment == "" {
-		c.DefaultEnvironment = "dev"
 	}
 	if c.BaseURL != "" && !strings.HasSuffix(c.BaseURL, "/") {
 		c.BaseURL += "/"
