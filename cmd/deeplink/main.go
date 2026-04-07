@@ -85,7 +85,7 @@ func run() error {
 	defer service.Close() //nolint:errcheck
 	service.Register(deeplink.RedirectProcessor{})
 
-	var handler http.Handler = service.Handler()
+	handler := service.Handler()
 	if apiKey := os.Getenv("DEEPLINK_API_KEY"); apiKey != "" {
 		handler = withAPIKey(handler, apiKey)
 		logger.Info("API key protection enabled for mutating endpoints")
