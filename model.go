@@ -17,10 +17,26 @@ type Link struct {
 	// Description for the OG preview page.
 	Description string `json:"description,omitempty"`
 	// ImageURL for the OG preview image.
+	// PNG/JPG/WebP only (SVG fails most scrapers); 1200x630 recommended.
 	ImageURL string `json:"image_url,omitempty"`
+	// ImageWidth is the og:image:width hint in pixels.
+	ImageWidth int `json:"image_width,omitempty"`
+	// ImageHeight is the og:image:height hint in pixels.
+	ImageHeight int `json:"image_height,omitempty"`
+	// ImageAlt is the alt text for og:image and twitter:image.
+	ImageAlt string `json:"image_alt,omitempty"`
+	// OGType is the og:type value (e.g. "website", "article", "profile").
+	// Empty defaults to "website" in the template. Setting "article" also
+	// emits article:published_time and article:modified_time tags.
+	OGType string `json:"og_type,omitempty"`
+	// Locale overrides the per-link og:locale (e.g. "en_US", "fr_FR").
+	// Empty falls back to Config.Locale.
+	Locale string `json:"locale,omitempty"`
 
 	// CreatedAt is an RFC 3339 timestamp. Set by the service.
 	CreatedAt string `json:"created_at,omitempty"`
+	// UpdatedAt is an RFC 3339 timestamp. Set by the service.
+	UpdatedAt string `json:"updated_at,omitempty"`
 
 	// Metadata holds processor-specific data.
 	Metadata map[string]any `json:"metadata,omitempty"`

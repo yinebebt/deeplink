@@ -3,6 +3,10 @@
 .env
 *.xml
 
+# Personal notes / scratch files
+local.md
+seed.sh
+
 # Build artifacts
 /deeplink
 /cmd/deeplink/deeplink

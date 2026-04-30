@@ -1,26 +1,43 @@
 <!DOCTYPE html>
-<html lang="en" prefix="og: http://ogp.me/ns#">
+<html lang="{{.Lang}}" prefix="og: http://ogp.me/ns#">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{.Title}}</title>
-    <meta name="description" content="{{.Description}}">
-    <meta property="og:type" content="website">
-    <meta property="og:title" content="{{.Title}}">
-    <meta property="og:description" content="{{.Description}}">
-    {{if .ImageURL}}<meta property="og:image" content="{{.ImageURL}}">
-    <meta property="og:image:width" content="1200">
-    <meta property="og:image:height" content="630">{{end}}
-    <meta property="og:url" content="{{.URL}}">
+    <meta name="robots" content="noindex,follow">
+    {{with .ShortURL}}<link rel="canonical" href="{{.}}">{{end}}
+    <title>{{with .Title}}{{.}}{{else}}Open link{{end}}</title>
+    {{with .Description}}<meta name="description" content="{{.}}">{{end}}
+
+    <meta property="og:type" content="{{with .OGType}}{{.}}{{else}}website{{end}}">
+    {{with .ShortURL}}<meta property="og:url" content="{{.}}">{{end}}
+    {{with .Title}}<meta property="og:title" content="{{.}}">{{end}}
+    {{with .Description}}<meta property="og:description" content="{{.}}">{{end}}
+    {{with .SiteName}}<meta property="og:site_name" content="{{.}}">{{end}}
+    {{with .Locale}}<meta property="og:locale" content="{{.}}">{{end}}
+    {{with .UpdatedAt}}<meta property="og:updated_time" content="{{.}}">{{end}}
+    {{with .ImageURL}}<meta property="og:image" content="{{.}}">{{end}}
+    {{with .ImageWidth}}<meta property="og:image:width" content="{{.}}">{{end}}
+    {{with .ImageHeight}}<meta property="og:image:height" content="{{.}}">{{end}}
+    {{with .ImageAlt}}<meta property="og:image:alt" content="{{.}}">{{end}}
+    {{- if eq .OGType "article"}}
+    {{- with .CreatedAt}}
+    <meta property="article:published_time" content="{{.}}">{{end}}
+    {{- with .UpdatedAt}}
+    <meta property="article:modified_time" content="{{.}}">{{end}}
+    {{- end}}
+
     <meta name="twitter:card" content="{{if .ImageURL}}summary_large_image{{else}}summary{{end}}">
-    <meta name="twitter:title" content="{{.Title}}">
-    <meta name="twitter:description" content="{{.Description}}">
-    {{if .ImageURL}}<meta name="twitter:image" content="{{.ImageURL}}">{{end}}
+    {{with .Title}}<meta name="twitter:title" content="{{.}}">{{end}}
+    {{with .Description}}<meta name="twitter:description" content="{{.}}">{{end}}
+    {{with .ImageURL}}<meta name="twitter:image" content="{{.}}">{{end}}
+    {{with .ImageAlt}}<meta name="twitter:image:alt" content="{{.}}">{{end}}
+    {{with .TwitterSite}}<meta name="twitter:site" content="{{.}}">{{end}}
+    {{with .FediverseCreator}}<meta name="fediverse:creator" content="{{.}}">{{end}}
 </head>
 <body>
     <main>
-        <h1>{{.Title}}</h1>
-        <p>{{.Description}}</p>
+        <h1>{{with .Title}}{{.}}{{else}}Open link{{end}}</h1>
+        {{with .Description}}<p>{{.}}</p>{{end}}
         <p><a href="{{.URL}}">Open link</a></p>
     </main>
 </body>

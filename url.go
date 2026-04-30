@@ -33,7 +33,9 @@ func (s *Service) shortenURL(ctx context.Context, payload *Link) (string, error)
 	}
 
 	payload.ShortID = id
-	payload.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	now := time.Now().UTC().Format(time.RFC3339)
+	payload.CreatedAt = now
+	payload.UpdatedAt = now
 
 	if err := s.config.Store.Save(ctx, id, payload); err != nil {
 		return "", fmt.Errorf("store payload: %w", err)

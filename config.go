@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+// defaultLocale is the og:locale fallback when neither Link.Locale nor
+// Config.Locale is set. en_US is the most widely-recognized OG locale value.
+const defaultLocale = "en_US"
+
 // Config configures a deeplink [Service].
 type Config struct {
 	// BaseURL is the prefix for generated short links
@@ -52,6 +56,20 @@ type Config struct {
 	AndroidStoreURL string
 	IOSStoreURL     string
 	WebFallbackURL  string
+
+	// SiteName is emitted as og:site_name on every preview page.
+	SiteName string
+
+	// Locale is the default og:locale value (e.g. "en_US"). A non-empty
+	// Link.Locale overrides it. Defaults to "en_US" when empty.
+	Locale string
+
+	// TwitterSite is the @handle emitted as twitter:site (e.g. "@example").
+	TwitterSite string
+
+	// FediverseCreator is the fediverse account emitted as
+	// fediverse:creator (e.g. "@user@instance.tld").
+	FediverseCreator string
 }
 
 func (c *Config) defaults() {
@@ -69,6 +87,9 @@ func (c *Config) defaults() {
 	}
 	if c.ClickFlushInterval == 0 {
 		c.ClickFlushInterval = time.Second
+	}
+	if c.Locale == "" {
+		c.Locale = defaultLocale
 	}
 	if c.HTTPClient == nil {
 		c.HTTPClient = &http.Client{
