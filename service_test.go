@@ -13,6 +13,9 @@ import (
 	"testing"
 )
 
+// testBaseURL is the canonical base URL used across preview/handler tests.
+const testBaseURL = "https://link.test/"
+
 type testProcessor struct{}
 
 func (testProcessor) Type() string { return "basic" }
@@ -47,10 +50,9 @@ func (testProcessor) Process(_ context.Context, payload *Link) error {
 func TestHandlerGenerateAndPreviewRedirect(t *testing.T) {
 	t.Parallel()
 
-	baseURL := "https://link.test/"
 	store := NewMemoryStore()
 	service, err := New(Config{
-		BaseURL: baseURL,
+		BaseURL: testBaseURL,
 		Store:   store,
 	})
 	if err != nil {
@@ -81,9 +83,9 @@ func TestHandlerGenerateAndPreviewRedirect(t *testing.T) {
 	}
 
 	shortURL := response["short_url"]
-	shortID := strings.TrimPrefix(shortURL, baseURL)
+	shortID := strings.TrimPrefix(shortURL, testBaseURL)
 	if shortID == shortURL || shortID == "" {
-		t.Fatalf("expected short URL with base %q, got %q", baseURL, shortURL)
+		t.Fatalf("expected short URL with base %q, got %q", testBaseURL, shortURL)
 	}
 
 	stored, err := store.Get(context.Background(), shortID)
@@ -134,9 +136,8 @@ func TestNewLoadsTemplates(t *testing.T) {
 		t.Fatalf("write preview template: %v", err)
 	}
 
-	baseURL := "https://link.test/"
 	service, err := New(Config{
-		BaseURL:     baseURL,
+		BaseURL:     testBaseURL,
 		Store:       NewMemoryStore(),
 		TemplateDir: dir,
 	})
@@ -162,7 +163,7 @@ func TestNewLoadsTemplates(t *testing.T) {
 		t.Fatalf("decode generate response: %v", err)
 	}
 
-	shortID := strings.TrimPrefix(response["short_url"], baseURL)
+	shortID := strings.TrimPrefix(response["short_url"], testBaseURL)
 	req = httptest.NewRequest(http.MethodGet, "/"+shortID, nil)
 	rec = httptest.NewRecorder()
 	service.Handler().ServeHTTP(rec, req)
@@ -173,4 +174,435 @@ func TestNewLoadsTemplates(t *testing.T) {
 	if got := rec.Body.String(); !strings.Contains(got, "Templated title") {
 		t.Fatalf("preview body = %q, want rendered title", got)
 	}
+}
+
+// newPreviewService builds a Service against the real default templates with
+// RedirectProcessor registered.
+func newPreviewService(t *testing.T, cfg Config) *Service {
+	t.Helper()
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = testBaseURL
+	}
+	if cfg.Store == nil {
+		cfg.Store = NewMemoryStore()
+	}
+	if cfg.TemplateDir == "" {
+		cfg.TemplateDir = "templates/default"
+	}
+	service, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	service.Register(RedirectProcessor{})
+	t.Cleanup(func() { _ = service.Close() })
+	return service
+}
+
+// createAndFetch posts a Link and GETs the preview at getPathPrefix+shortID
+// ("/" for handlePreview, "/preview/" for handleStaticPreview).
+func createAndFetch(t *testing.T, service *Service, payloadJSON, getPathPrefix string) (*httptest.ResponseRecorder, string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/shorten", strings.NewReader(payloadJSON))
+	rec := httptest.NewRecorder()
+	service.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d; body = %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	shortID := strings.TrimPrefix(resp["short_url"], service.config.BaseURL)
+
+	req = httptest.NewRequest(http.MethodGet, getPathPrefix+shortID, nil)
+	rec = httptest.NewRecorder()
+	service.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("preview status = %d; body = %s", rec.Code, rec.Body.String())
+	}
+	return rec, shortID
+}
+
+func TestPreviewMetaTags_AllFields(t *testing.T) {
+	t.Parallel()
+
+	service := newPreviewService(t, Config{
+		SiteName:         "Example",
+		Locale:           "fr_FR",
+		TwitterSite:      "@example",
+		FediverseCreator: "@example@instance.tld",
+	})
+
+	payload := `{
+		"type": "redirect",
+		"url": "https://example.com/post",
+		"title": "Hello",
+		"description": "World",
+		"image_url": "https://cdn.example.com/img.png",
+		"image_width": 1200,
+		"image_height": 630,
+		"image_alt": "Cover image",
+		"og_type": "website",
+		"locale": "en_GB"
+	}`
+
+	rec, shortID := createAndFetch(t, service, payload, "/")
+	body := rec.Body.String()
+
+	want := []string{
+		`<link rel="canonical" href="https://link.test/` + shortID + `">`,
+		`<meta name="robots" content="noindex,follow">`,
+		`<meta property="og:type" content="website">`,
+		`<meta property="og:url" content="https://link.test/` + shortID + `">`,
+		`<meta property="og:title" content="Hello">`,
+		`<meta property="og:description" content="World">`,
+		`<meta property="og:site_name" content="Example">`,
+		`<meta property="og:locale" content="en_GB">`,
+		`<meta property="og:image" content="https://cdn.example.com/img.png">`,
+		`<meta property="og:image:width" content="1200">`,
+		`<meta property="og:image:height" content="630">`,
+		`<meta property="og:image:alt" content="Cover image">`,
+		`<meta property="og:updated_time" content="`,
+		`<meta name="twitter:card" content="summary_large_image">`,
+		`<meta name="twitter:title" content="Hello">`,
+		`<meta name="twitter:description" content="World">`,
+		`<meta name="twitter:image" content="https://cdn.example.com/img.png">`,
+		`<meta name="twitter:image:alt" content="Cover image">`,
+		`<meta name="twitter:site" content="@example">`,
+		`<meta name="fediverse:creator" content="@example@instance.tld">`,
+	}
+	for _, w := range want {
+		if !strings.Contains(body, w) {
+			t.Errorf("missing tag: %s\nbody:\n%s", w, body)
+		}
+	}
+}
+
+func TestPreviewMetaTags_OmitEmpty(t *testing.T) {
+	t.Parallel()
+
+	service := newPreviewService(t, Config{Locale: ""})
+
+	payload := `{"type":"redirect","url":"https://example.com/min"}`
+
+	rec, _ := createAndFetch(t, service, payload, "/")
+	body := rec.Body.String()
+
+	if strings.Contains(body, `content=""`) {
+		t.Errorf("found empty content attribute in body:\n%s", body)
+	}
+
+	forbidden := []string{
+		"og:image",
+		"og:image:width",
+		"og:image:height",
+		"og:image:alt",
+		"twitter:image",
+		"twitter:image:alt",
+		"twitter:site",
+		"fediverse:creator",
+		"og:site_name",
+		"article:published_time",
+		"article:modified_time",
+	}
+	for _, f := range forbidden {
+		if strings.Contains(body, f) {
+			t.Errorf("unexpected tag/marker %q in body:\n%s", f, body)
+		}
+	}
+
+	if !strings.Contains(body, `<meta name="twitter:card" content="summary">`) {
+		t.Errorf("expected twitter:card=summary fallback")
+	}
+}
+
+func TestPreviewMetaTags_TwitterCardFallback(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no image -> summary", func(t *testing.T) {
+		t.Parallel()
+		service := newPreviewService(t, Config{})
+		rec, _ := createAndFetch(t, service, `{"type":"redirect","url":"https://example.com/a"}`, "/")
+		if !strings.Contains(rec.Body.String(), `<meta name="twitter:card" content="summary">`) {
+			t.Errorf("want summary card, body:\n%s", rec.Body.String())
+		}
+	})
+
+	t.Run("image -> summary_large_image", func(t *testing.T) {
+		t.Parallel()
+		service := newPreviewService(t, Config{})
+		payload := `{"type":"redirect","url":"https://example.com/b","image_url":"https://cdn.example.com/x.png"}`
+		rec, _ := createAndFetch(t, service, payload, "/")
+		if !strings.Contains(rec.Body.String(), `<meta name="twitter:card" content="summary_large_image">`) {
+			t.Errorf("want summary_large_image, body:\n%s", rec.Body.String())
+		}
+	})
+}
+
+func TestPreviewMetaTags_Canonical(t *testing.T) {
+	t.Parallel()
+
+	service := newPreviewService(t, Config{BaseURL: "https://canonical.test/"})
+
+	rec, shortID := createAndFetch(t, service, `{"type":"redirect","url":"https://example.com/c"}`, "/")
+	want := `<link rel="canonical" href="https://canonical.test/` + shortID + `">`
+	if !strings.Contains(rec.Body.String(), want) {
+		t.Errorf("missing canonical link: %s\nbody:\n%s", want, rec.Body.String())
+	}
+}
+
+func TestPreviewMetaTags_RobotsNoindex(t *testing.T) {
+	t.Parallel()
+
+	service := newPreviewService(t, Config{})
+	rec, _ := createAndFetch(t, service, `{"type":"redirect","url":"https://example.com/d"}`, "/")
+	if !strings.Contains(rec.Body.String(), `<meta name="robots" content="noindex,follow">`) {
+		t.Errorf("missing robots meta tag, body:\n%s", rec.Body.String())
+	}
+}
+
+func TestStaticPreviewCacheControl(t *testing.T) {
+	t.Parallel()
+
+	service := newPreviewService(t, Config{
+		WebFallbackURL: "https://example.com/fallback",
+	})
+
+	livePreview, shortID := createAndFetch(t, service, `{"type":"redirect","url":"https://example.com/e"}`, "/")
+	if got := livePreview.Header().Get("Cache-Control"); got != previewCacheControl {
+		t.Fatalf("live Cache-Control = %q, want %q", got, previewCacheControl)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/preview/"+shortID, nil)
+	rec := httptest.NewRecorder()
+	service.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("static preview status = %d; body = %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Cache-Control"); got != previewCacheControl {
+		t.Errorf("static Cache-Control = %q, want %q", got, previewCacheControl)
+	}
+}
+
+func TestPreviewMetaTags_ArticleType(t *testing.T) {
+	t.Parallel()
+
+	service := newPreviewService(t, Config{
+		WebFallbackURL: "https://example.com/fallback",
+		SiteName:       "Example",
+	})
+
+	payload := `{
+		"type": "redirect",
+		"url": "https://example.com/article",
+		"title": "Article title",
+		"description": "Article body",
+		"image_url": "https://cdn.example.com/cover.png",
+		"og_type": "article"
+	}`
+
+	rec, _ := createAndFetch(t, service, payload, "/preview/")
+	body := rec.Body.String()
+
+	want := []string{
+		`<meta property="og:type" content="article">`,
+		`<meta property="article:published_time" content="`,
+		`<meta property="article:modified_time" content="`,
+	}
+	for _, w := range want {
+		if !strings.Contains(body, w) {
+			t.Errorf("missing article marker %q, body:\n%s", w, body)
+		}
+	}
+}
+
+// Mixed-case and padded OGType must still trigger article tags. The
+// previewView wrapper normalizes the value so the template's exact-string
+// comparison matches.
+func TestPreviewMetaTags_OGTypeNormalized(t *testing.T) {
+	t.Parallel()
+
+	service := newPreviewService(t, Config{
+		WebFallbackURL: "https://example.com/fallback",
+	})
+
+	payload := `{
+		"type": "redirect",
+		"url": "https://example.com/normalized",
+		"title": "Mixed case",
+		"og_type": "  Article  "
+	}`
+
+	rec, _ := createAndFetch(t, service, payload, "/preview/")
+	body := rec.Body.String()
+
+	for _, w := range []string{
+		`<meta property="og:type" content="article">`,
+		`<meta property="article:published_time" content="`,
+	} {
+		if !strings.Contains(body, w) {
+			t.Errorf("missing %q after OGType normalization, body:\n%s", w, body)
+		}
+	}
+}
+
+// Locale resolution chain: Link.Locale > Config.Locale > defaultLocale.
+// Lang attribute on <html> is derived from the resolved locale.
+func TestPreviewMetaTags_LocaleFallback(t *testing.T) {
+	t.Parallel()
+
+	t.Run("link locale wins", func(t *testing.T) {
+		t.Parallel()
+		service := newPreviewService(t, Config{Locale: "fr_FR"})
+		rec, _ := createAndFetch(t, service,
+			`{"type":"redirect","url":"https://example.com/loc1","locale":"de_DE"}`, "/")
+		body := rec.Body.String()
+		if !strings.Contains(body, `<meta property="og:locale" content="de_DE">`) {
+			t.Errorf("link locale should win, body:\n%s", body)
+		}
+		if !strings.Contains(body, `<html lang="de"`) {
+			t.Errorf("expected lang=\"de\" derived from de_DE, body:\n%s", body)
+		}
+	})
+
+	t.Run("config locale fills when link empty", func(t *testing.T) {
+		t.Parallel()
+		service := newPreviewService(t, Config{Locale: "fr_FR"})
+		rec, _ := createAndFetch(t, service,
+			`{"type":"redirect","url":"https://example.com/loc2"}`, "/")
+		body := rec.Body.String()
+		if !strings.Contains(body, `<meta property="og:locale" content="fr_FR">`) {
+			t.Errorf("config locale should fill, body:\n%s", body)
+		}
+		if !strings.Contains(body, `<html lang="fr"`) {
+			t.Errorf("expected lang=\"fr\" derived from fr_FR, body:\n%s", body)
+		}
+	})
+
+	t.Run("default locale when both empty", func(t *testing.T) {
+		t.Parallel()
+		// Config.Locale empty -> defaults() sets defaultLocale.
+		service := newPreviewService(t, Config{})
+		rec, _ := createAndFetch(t, service,
+			`{"type":"redirect","url":"https://example.com/loc3"}`, "/")
+		body := rec.Body.String()
+		want := `<meta property="og:locale" content="` + defaultLocale + `">`
+		if !strings.Contains(body, want) {
+			t.Errorf("expected default locale tag, body:\n%s", body)
+		}
+		if !strings.Contains(body, `<html lang="en"`) {
+			t.Errorf("expected lang=\"en\" derived from default locale, body:\n%s", body)
+		}
+	})
+}
+
+// Empty Title must still produce a valid <title> element so the page is
+// HTML5-conformant. We fall back to "Untitled" rather than emitting an
+// empty element.
+func TestPreviewMetaTags_TitleFallback(t *testing.T) {
+	t.Parallel()
+
+	service, err := New(Config{
+		BaseURL:     testBaseURL,
+		Store:       NewMemoryStore(),
+		TemplateDir: "templates/default",
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	service.Register(noTitleProcessor{})
+	t.Cleanup(func() { _ = service.Close() })
+
+	req := httptest.NewRequest(http.MethodPost, "/shorten",
+		strings.NewReader(`{"type":"no-title","url":"https://example.com/no-title"}`))
+	rec := httptest.NewRecorder()
+	service.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d", rec.Code)
+	}
+	var resp map[string]string
+	_ = json.NewDecoder(rec.Body).Decode(&resp)
+	shortID := strings.TrimPrefix(resp["short_url"], testBaseURL)
+
+	req = httptest.NewRequest(http.MethodGet, "/"+shortID, nil)
+	rec = httptest.NewRecorder()
+	service.Handler().ServeHTTP(rec, req)
+	body := rec.Body.String()
+
+	if strings.Contains(body, "<title></title>") {
+		t.Errorf("empty <title> emitted, body:\n%s", body)
+	}
+	if !strings.Contains(body, "<title>Open link</title>") {
+		t.Errorf("expected fallback title, body:\n%s", body)
+	}
+	// og:title is gated on Link.Title (no fallback) -> must be absent.
+	if strings.Contains(body, "og:title") {
+		t.Errorf("og:title should be omitted when Title empty, body:\n%s", body)
+	}
+}
+
+// Non-article OGType values must emit og:type but skip article:* tags.
+func TestPreviewMetaTags_NonArticleOGTypeSkipsArticleTags(t *testing.T) {
+	t.Parallel()
+
+	for _, ogType := range []string{"profile", "book", "video.movie"} {
+		t.Run(ogType, func(t *testing.T) {
+			t.Parallel()
+			service := newPreviewService(t, Config{
+				WebFallbackURL: "https://example.com/fallback",
+			})
+			payload := `{
+				"type": "redirect",
+				"url": "https://example.com/x",
+				"title": "Sample",
+				"og_type": "` + ogType + `"
+			}`
+			rec, _ := createAndFetch(t, service, payload, "/preview/")
+			body := rec.Body.String()
+
+			if !strings.Contains(body, `<meta property="og:type" content="`+ogType+`">`) {
+				t.Errorf("missing og:type=%s, body:\n%s", ogType, body)
+			}
+			for _, forbidden := range []string{
+				"article:published_time",
+				"article:modified_time",
+			} {
+				if strings.Contains(body, forbidden) {
+					t.Errorf("og:type=%s should not emit %q, body:\n%s", ogType, forbidden, body)
+				}
+			}
+		})
+	}
+}
+
+func TestLangFromLocale(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		in, want string
+	}{
+		{"", "en"},
+		{"en_US", "en"},
+		{"fr-FR", "fr"},
+		{"de_DE", "de"},
+		{"PT_BR", "pt"},
+		{"es", "es"},
+		{"ES", "es"},
+	}
+	for _, c := range cases {
+		if got := langFromLocale(c.in); got != c.want {
+			t.Errorf("langFromLocale(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+type noTitleProcessor struct{}
+
+func (noTitleProcessor) Type() string { return "no-title" }
+func (noTitleProcessor) Process(_ context.Context, payload *Link) error {
+	if payload.URL == "" {
+		return NewError(errors.New("missing url"), http.StatusBadRequest, "url is required")
+	}
+	return nil
 }

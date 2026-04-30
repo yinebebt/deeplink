@@ -105,10 +105,7 @@ func (s *Service) handlePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(buf.Bytes())
+	writePreviewHTML(w, buf.Bytes())
 	s.config.Logger.Info("preview rendered", "shortID", shortID, "type", payload.Type, "duration", time.Since(start))
 }
 
@@ -117,7 +114,6 @@ func (s *Service) handlePreview(w http.ResponseWriter, r *http.Request) {
 // flow where the user should tap to continue.
 func (s *Service) handleStaticPreview(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	w.Header().Set("Content-Type", "text/html")
 
 	shortID := r.PathValue("shortID")
 
@@ -142,8 +138,7 @@ func (s *Service) handleStaticPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(buf.Bytes())
+	writePreviewHTML(w, buf.Bytes())
 	s.config.Logger.Info("preview rendered (no redirect)", "shortID", shortID, "type", payload.Type, "duration", time.Since(start))
 }
 
@@ -257,16 +252,6 @@ func handleHealth(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("OK"))
 }
 
-func (s *Service) buildPreviewData(payload *Link) any {
-	processor := s.registry.Get(payload.Type)
-	if p, ok := processor.(Previewer); ok {
-		if data := p.Preview(payload); data != nil {
-			return data
-		}
-	}
-	return payload
-}
-
 func (s *Service) withCORS(h http.HandlerFunc) http.HandlerFunc {
 	allowed := make(map[string]bool, len(s.config.AllowedOrigins))
 	for _, o := range s.config.AllowedOrigins {
@@ -289,8 +274,7 @@ func (s *Service) withCORS(h http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Service) respondError(w http.ResponseWriter, err error) {
-	var appErr *Error
-	if errors.As(err, &appErr) {
+	if appErr, ok := errors.AsType[*Error](err); ok {
 		s.config.Logger.Error("request error", "error", appErr, "status", appErr.Code)
 		http.Error(w, appErr.Message, appErr.Code)
 		return

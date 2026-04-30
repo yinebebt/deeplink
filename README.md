@@ -124,12 +124,71 @@ The default templates in `templates/default/` use these fields from `Link`:
 
 | Field | Template variable | Used for |
 | --- | --- | --- |
-| URL | `{{.URL}}` | Redirect target, og:url |
-| Title | `{{.Title}}` | Page title, og:title |
-| Description | `{{.Description}}` | og:description |
-| ImageURL | `{{.ImageURL}}` | og:image |
+| URL | `{{.URL}}` | Redirect target |
+| Title | `{{.Title}}` | Page title, og:title, twitter:title |
+| Description | `{{.Description}}` | og:description, twitter:description |
+| ImageURL | `{{.ImageURL}}` | og:image, twitter:image |
+| ImageWidth | `{{.ImageWidth}}` | og:image:width |
+| ImageHeight | `{{.ImageHeight}}` | og:image:height |
+| ImageAlt | `{{.ImageAlt}}` | og:image:alt, twitter:image:alt |
+| OGType | `{{.OGType}}` | og:type (defaults to `website`) |
+| Locale | `{{.Locale}}` | og:locale (per-link override) |
+| Lang | `{{.Lang}}` | `<html lang>` (derived from Locale) |
+| CreatedAt | `{{.CreatedAt}}` | article:published_time |
+| UpdatedAt | `{{.UpdatedAt}}` | og:updated_time, article:modified_time |
+| ShortURL | `{{.ShortURL}}` | canonical link, og:url |
 
 To customize, copy `templates/default/` and set `TemplateDir` in config.
+
+## Link preview metadata
+
+Preview pages emit standard Open Graph, Twitter Card, and fediverse meta
+tags consumed by every platform that scrapes link previews. Every tag is
+gated on its source value: empty fields are not emitted, so scrapers never
+see `content=""` warnings.
+
+### Per-link fields (`Link`)
+
+| Field | Effect |
+| --- | --- |
+| `Title` | `<title>`, `og:title`, `twitter:title` |
+| `Description` | `description`, `og:description`, `twitter:description` |
+| `ImageURL` | `og:image`, `twitter:image`. PNG/JPG/WebP only (SVG fails most scrapers); 1200x630 recommended |
+| `ImageWidth` / `ImageHeight` | `og:image:width` / `og:image:height` |
+| `ImageAlt` | `og:image:alt`, `twitter:image:alt` |
+| `OGType` | `og:type` (defaults to `website`). Setting `article` also emits `article:published_time` and `article:modified_time` |
+| `Locale` | `og:locale`. Falls back to `Config.Locale` |
+| `UpdatedAt` | `og:updated_time`. Set automatically on create |
+
+### Service-wide fields (`Config`)
+
+| Field | Effect |
+| --- | --- |
+| `SiteName` | `og:site_name` |
+| `Locale` | Default `og:locale` when `Link.Locale` is empty |
+| `TwitterSite` | `twitter:site` (e.g. `@example`) |
+| `FediverseCreator` | `fediverse:creator` (e.g. `@user@instance.tld`) |
+
+### Example payload
+
+```bash
+curl -X POST http://localhost:8090/shorten \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "type": "redirect",
+    "url": "https://example.com/posts/launch",
+    "title": "We just launched",
+    "description": "What is new in v2",
+    "image_url": "https://cdn.example.com/og/launch.png",
+    "image_width": 1200,
+    "image_height": 630,
+    "image_alt": "v2 launch cover",
+    "og_type": "article"
+  }'
+```
+
+Preview pages also emit `<meta name="robots" content="noindex,follow">` so
+short links do not compete with the destination URL in search rankings.
 
 ## Development
 
