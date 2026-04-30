@@ -117,6 +117,10 @@ Environment variables for `cmd/deeplink`:
 | `DEEPLINK_CLICK_BUFFER_SIZE` | `1024` | Async click event buffer capacity |
 | `DEEPLINK_CLICK_FLUSH_INTERVAL` | `1s` | How often buffered clicks are flushed to the store |
 | `DEEPLINK_API_KEY` | | Protect mutating endpoints (`Authorization: Bearer <key>` or `X-API-Key: <key>`) |
+| `DEEPLINK_SITE_NAME` | | `og:site_name` on every preview |
+| `DEEPLINK_LOCALE` | `en_US` | Default `og:locale` (per-link `locale` overrides) |
+| `DEEPLINK_TWITTER_SITE` | | `twitter:site` (e.g. `@example`) |
+| `DEEPLINK_FEDIVERSE_CREATOR` | | `fediverse:creator` (e.g. `@user@instance.tld`) |
 
 ## Templates
 

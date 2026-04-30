@@ -78,6 +78,10 @@ func run() error {
 		AndroidStoreURL:    os.Getenv("DEEPLINK_ANDROID_STORE_URL"),
 		IOSStoreURL:        os.Getenv("DEEPLINK_IOS_STORE_URL"),
 		WebFallbackURL:     os.Getenv("DEEPLINK_WEB_FALLBACK_URL"),
+		SiteName:           os.Getenv("DEEPLINK_SITE_NAME"),
+		Locale:             os.Getenv("DEEPLINK_LOCALE"),
+		TwitterSite:        os.Getenv("DEEPLINK_TWITTER_SITE"),
+		FediverseCreator:   os.Getenv("DEEPLINK_FEDIVERSE_CREATOR"),
 	}
 
 	service, err := deeplink.New(cfg)
