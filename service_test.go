@@ -606,3 +606,151 @@ func (noTitleProcessor) Process(_ context.Context, payload *Link) error {
 	}
 	return nil
 }
+
+// createLinkForTest posts to /shorten and returns the new short ID.
+func createLinkForTest(t *testing.T, service *Service, payloadJSON string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/shorten", strings.NewReader(payloadJSON))
+	rec := httptest.NewRecorder()
+	service.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d; body = %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	return strings.TrimPrefix(resp["short_url"], service.config.BaseURL)
+}
+
+func TestHandleUpdate(t *testing.T) {
+	t.Parallel()
+
+	service := newPreviewService(t, Config{})
+
+	shortID := createLinkForTest(t, service,
+		`{"type":"redirect","url":"https://example.com/before","title":"Before"}`)
+
+	patch := `{"title":"After","image_url":"https://cdn.example.com/x.png","image_width":1200}`
+	req := httptest.NewRequest(http.MethodPatch, "/"+shortID, strings.NewReader(patch))
+	rec := httptest.NewRecorder()
+	service.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch status = %d; body = %s", rec.Code, rec.Body.String())
+	}
+
+	var got LinkResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode patch response: %v", err)
+	}
+	if got.Title != "After" {
+		t.Errorf("Title = %q, want %q", got.Title, "After")
+	}
+	if got.ImageURL != "https://cdn.example.com/x.png" {
+		t.Errorf("ImageURL = %q", got.ImageURL)
+	}
+	if got.ImageWidth != 1200 {
+		t.Errorf("ImageWidth = %d, want 1200", got.ImageWidth)
+	}
+	if got.URL != "https://example.com/before" {
+		t.Errorf("URL unexpectedly changed to %q", got.URL)
+	}
+	if got.UpdatedAt == "" {
+		t.Error("UpdatedAt not set")
+	}
+}
+
+func TestHandleUpdateNotFound(t *testing.T) {
+	t.Parallel()
+
+	service := newPreviewService(t, Config{})
+	req := httptest.NewRequest(http.MethodPatch, "/missing", strings.NewReader(`{"title":"x"}`))
+	rec := httptest.NewRecorder()
+	service.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestHandleDeleteSoftDeletes(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStore()
+	service := newPreviewService(t, Config{Store: store})
+
+	shortID := createLinkForTest(t, service,
+		`{"type":"redirect","url":"https://example.com/del"}`)
+
+	req := httptest.NewRequest(http.MethodDelete, "/"+shortID, nil)
+	rec := httptest.NewRecorder()
+	service.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d", rec.Code)
+	}
+
+	// Preview should now 404.
+	req = httptest.NewRequest(http.MethodGet, "/"+shortID, nil)
+	rec = httptest.NewRecorder()
+	service.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("preview after delete status = %d, want 404", rec.Code)
+	}
+
+	// Underlying record is retained during the grace window with DeletedAt set.
+	stored, err := store.Get(context.Background(), shortID)
+	if err != nil {
+		t.Fatalf("expected record to remain within grace window, got %v", err)
+	}
+	if stored.DeletedAt == "" {
+		t.Error("DeletedAt not set on stored payload")
+	}
+
+	// Double-delete returns 404 (already soft-deleted).
+	req = httptest.NewRequest(http.MethodDelete, "/"+shortID, nil)
+	rec = httptest.NewRecorder()
+	service.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("second delete status = %d, want 404", rec.Code)
+	}
+}
+
+func TestHandleLinkListAll(t *testing.T) {
+	t.Parallel()
+
+	service := newPreviewService(t, Config{})
+
+	a := createLinkForTest(t, service, `{"type":"redirect","url":"https://example.com/a","title":"A"}`)
+	b := createLinkForTest(t, service, `{"type":"redirect","url":"https://example.com/b","title":"B"}`)
+
+	// Soft-delete one to verify it is filtered out.
+	req := httptest.NewRequest(http.MethodDelete, "/"+b, nil)
+	rec := httptest.NewRecorder()
+	service.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/links", nil)
+	rec = httptest.NewRecorder()
+	service.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/links status = %d", rec.Code)
+	}
+
+	var resp []LinkResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("got %d entries, want 1 (b should be filtered)", len(resp))
+	}
+	if resp[0].ShortID != a {
+		t.Errorf("ShortID = %q, want %q", resp[0].ShortID, a)
+	}
+	if resp[0].ShortLink != testBaseURL+a {
+		t.Errorf("ShortLink = %q", resp[0].ShortLink)
+	}
+}

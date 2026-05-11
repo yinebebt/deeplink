@@ -37,6 +37,10 @@ type Link struct {
 	CreatedAt string `json:"created_at,omitempty"`
 	// UpdatedAt is an RFC 3339 timestamp. Set by the service.
 	UpdatedAt string `json:"updated_at,omitempty"`
+	// DeletedAt is an RFC 3339 timestamp set when the link is soft-deleted.
+	// Soft-deleted links are hidden from list and preview; the underlying
+	// record is purged after [DeleteGracePeriod] elapses.
+	DeletedAt string `json:"deleted_at,omitempty"`
 
 	// Metadata holds processor-specific data.
 	Metadata map[string]any `json:"metadata,omitempty"`
@@ -59,9 +63,15 @@ func (l *Link) SetMeta(key string, value any) {
 	l.Metadata[key] = value
 }
 
-// LinkInfo is the response type for link list and detail endpoints.
-type LinkInfo struct {
+// LinkResponse is the wire shape returned by all link-reading endpoints
+// (list, detail, update). It embeds the stored [Link] and adds the
+// rendered short URL plus the current click count.
+//
+// At the store layer, ShortLink carries only the short ID; HTTP handlers
+// prefix it with [Config.BaseURL] before responding so callers see a full
+// URL.
+type LinkResponse struct {
+	*Link
 	ShortLink string `json:"short_link"`
-	URL       string `json:"url"`
 	Clicks    int64  `json:"clicks"`
 }
