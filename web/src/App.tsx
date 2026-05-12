@@ -2,12 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiKeyInput } from "./components/ApiKeyInput";
 import { LinkForm } from "./components/LinkForm";
 import { LinkRow } from "./components/LinkRow";
-import { createLink, deleteLink, listLinks, updateLink } from "./api";
+import { LinkDetail } from "./components/LinkDetail";
+import { createLink, deleteLink, listLinks, listTypes, updateLink } from "./api";
 import type { LinkDraft, LinkResponse } from "./types";
 
 type Modal =
   | { kind: "none" }
   | { kind: "create" }
+  | { kind: "view"; link: LinkResponse }
   | { kind: "edit"; link: LinkResponse }
   | { kind: "delete"; link: LinkResponse };
 
@@ -38,8 +40,13 @@ function buildPatch(link: LinkResponse, draft: LinkDraft): Partial<LinkDraft> {
 
 export default function App() {
   const [links, setLinks] = useState<LinkResponse[]>([]);
+  const [types, setTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  // Banner error covers list-level failures (load, types fetch). Modal
+  // flows (create/edit/delete) surface their errors inside the modal so
+  // they aren't hidden behind the backdrop.
   const [error, setError] = useState<string | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal>({ kind: "none" });
   const [busy, setBusy] = useState(false);
 
@@ -58,19 +65,32 @@ export default function App() {
 
   useEffect(() => {
     void reload();
+    // Types are static for a running server; fetch once. Failure is
+    // non-fatal — the form falls back to whatever the draft holds.
+    listTypes().then(setTypes, () => {});
   }, [reload]);
 
   const totalClicks = links.reduce((sum, l) => sum + l.clicks, 0);
 
+  const openModal = (m: Modal) => {
+    setModalError(null);
+    setModal(m);
+  };
+
+  const closeModal = () => {
+    setModalError(null);
+    setModal({ kind: "none" });
+  };
+
   const handleCreate = async (draft: LinkDraft) => {
     setBusy(true);
-    setError(null);
+    setModalError(null);
     try {
       await createLink(draft);
-      setModal({ kind: "none" });
+      closeModal();
       await reload();
     } catch (e) {
-      setError((e as Error).message);
+      setModalError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -79,16 +99,16 @@ export default function App() {
   const handleEdit = async (draft: LinkDraft) => {
     if (modal.kind !== "edit") return;
     setBusy(true);
-    setError(null);
+    setModalError(null);
     try {
       const patch = buildPatch(modal.link, draft);
       const id = modal.link.short_id;
       if (!id) throw new Error("missing short id");
       await updateLink(id, patch);
-      setModal({ kind: "none" });
+      closeModal();
       await reload();
     } catch (e) {
-      setError((e as Error).message);
+      setModalError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -97,15 +117,15 @@ export default function App() {
   const handleDelete = async () => {
     if (modal.kind !== "delete") return;
     setBusy(true);
-    setError(null);
+    setModalError(null);
     try {
       const id = modal.link.short_id;
       if (!id) throw new Error("missing short id");
       await deleteLink(id);
-      setModal({ kind: "none" });
+      closeModal();
       await reload();
     } catch (e) {
-      setError((e as Error).message);
+      setModalError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -129,11 +149,31 @@ export default function App() {
       {error && <div className="error-banner">{error}</div>}
 
       <div className="toolbar">
-        <button className="btn btn-primary" onClick={() => setModal({ kind: "create" })}>
+        <button className="btn btn-primary" onClick={() => openModal({ kind: "create" })}>
           + New link
         </button>
-        <button className="btn btn-ghost" onClick={() => void reload()} disabled={loading}>
-          Refresh
+        <button
+          className="btn btn-icon"
+          onClick={() => void reload()}
+          disabled={loading}
+          aria-label="Refresh"
+          title="Refresh"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={loading ? "spin" : ""}
+          >
+            <polyline points="23 4 23 10 17 10" />
+            <polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+          </svg>
         </button>
         <ApiKeyInput />
       </div>
@@ -146,38 +186,55 @@ export default function App() {
             <LinkRow
               key={link.short_id}
               link={link}
-              onEdit={(l) => setModal({ kind: "edit", link: l })}
-              onDelete={(l) => setModal({ kind: "delete", link: l })}
+              onView={(l) => openModal({ kind: "view", link: l })}
+              onEdit={(l) => openModal({ kind: "edit", link: l })}
+              onDelete={(l) => openModal({ kind: "delete", link: l })}
             />
           ))
         )}
       </div>
 
       {modal.kind === "create" && (
-        <Modal title="Create link" onClose={() => setModal({ kind: "none" })}>
+        <Modal title="Create link" onClose={closeModal}>
           <LinkForm
             mode="create"
             busy={busy}
+            error={modalError}
+            types={types}
             onSubmit={handleCreate}
-            onCancel={() => setModal({ kind: "none" })}
+            onCancel={closeModal}
+          />
+        </Modal>
+      )}
+
+      {modal.kind === "view" && (
+        <Modal title="Link details" onClose={closeModal} wide>
+          <LinkDetail
+            link={modal.link}
+            onClose={closeModal}
+            onEdit={() => openModal({ kind: "edit", link: modal.link })}
+            onDelete={() => openModal({ kind: "delete", link: modal.link })}
           />
         </Modal>
       )}
 
       {modal.kind === "edit" && (
-        <Modal title="Edit link" onClose={() => setModal({ kind: "none" })}>
+        <Modal title="Edit link" onClose={closeModal}>
           <LinkForm
             mode="edit"
             busy={busy}
+            error={modalError}
+            types={types}
             initial={modal.link}
             onSubmit={handleEdit}
-            onCancel={() => setModal({ kind: "none" })}
+            onCancel={closeModal}
           />
         </Modal>
       )}
 
       {modal.kind === "delete" && (
-        <Modal title="Delete link?" onClose={() => setModal({ kind: "none" })}>
+        <Modal title="Delete link?" onClose={closeModal}>
+          {modalError && <div className="form-error">{modalError}</div>}
           <p>
             Delete <code>{modal.link.short_id}</code>? This soft-deletes the link;
             it stays recoverable in the backing store for the grace window.
@@ -186,7 +243,7 @@ export default function App() {
             <button
               type="button"
               className="btn"
-              onClick={() => setModal({ kind: "none" })}
+              onClick={closeModal}
               disabled={busy}
             >
               Cancel
@@ -221,10 +278,12 @@ function Modal({
   title,
   children,
   onClose,
+  wide,
 }: {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
+  wide?: boolean;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -236,7 +295,7 @@ function Modal({
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className={`modal ${wide ? "wide" : ""}`} onClick={(e) => e.stopPropagation()}>
         <h2>{title}</h2>
         {children}
       </div>

@@ -58,6 +58,10 @@ export function listLinks(): Promise<LinkResponse[]> {
   return request<LinkResponse[]>("/links");
 }
 
+export function listTypes(): Promise<string[]> {
+  return request<string[]>("/types");
+}
+
 export function createLink(draft: LinkDraft): Promise<{ short_url: string }> {
   return request<{ short_url: string }>("/shorten", {
     method: "POST",

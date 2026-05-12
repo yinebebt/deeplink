@@ -21,6 +21,7 @@ import (
 //	GET    /links                full link list across all types (dashboard)
 //	GET    /links/{type}         list links by type
 //	GET    /links/{type}/{shortID} single link with click count
+//	GET    /types                registered processor type names
 //	GET    /health               health check
 //
 // When store URL fields are set in [Config], these are also registered:
@@ -35,6 +36,7 @@ func (s *Service) Handler() http.Handler {
 	mux.HandleFunc("GET /links", s.handleLinkListAll)
 	mux.HandleFunc("GET /links/{type}", s.handleLinkList)
 	mux.HandleFunc("GET /links/{type}/{shortID}", s.handleLinkDetail)
+	mux.HandleFunc("GET /types", s.handleTypes)
 	mux.HandleFunc("GET /health", handleHealth)
 
 	if s.config.hasMobileRoutes() {
@@ -53,14 +55,14 @@ func (s *Service) Handler() http.Handler {
 func (s *Service) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MiB
 	var payload Link
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		s.respondError(w, NewError(err, http.StatusBadRequest, "invalid JSON payload"))
 		return
 	}
 
-	processor := s.registry.Get(strings.ToLower(payload.Type))
+	processor := s.registry.Get(payload.Type)
 	if processor == nil {
 		s.respondError(w, ErrInvalidType)
 		return
@@ -412,6 +414,12 @@ func (s *Service) handleWellKnown(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	http.ServeFile(w, r, filePath)
+}
+
+// handleTypes returns all registered processor type names for the
+// dashboard's create-form dropdown.
+func (s *Service) handleTypes(w http.ResponseWriter, _ *http.Request) {
+	respondJSON(w, http.StatusOK, s.registry.Types())
 }
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {

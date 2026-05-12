@@ -5,6 +5,8 @@ interface Props {
   initial?: LinkDraft;
   mode: "create" | "edit";
   busy?: boolean;
+  error?: string | null;
+  types?: string[];
   onSubmit: (draft: LinkDraft) => void | Promise<void>;
   onCancel: () => void;
 }
@@ -33,7 +35,7 @@ function hasAdvancedValues(d: LinkDraft): boolean {
   );
 }
 
-export function LinkForm({ initial, mode, busy, onSubmit, onCancel }: Props) {
+export function LinkForm({ initial, mode, busy, error, types, onSubmit, onCancel }: Props) {
   const [draft, setDraft] = useState<LinkDraft>(
     initial ?? { ...CREATE_DEFAULTS },
   );
@@ -50,19 +52,30 @@ export function LinkForm({ initial, mode, busy, onSubmit, onCancel }: Props) {
     void onSubmit(draft);
   };
 
+  // When the /types fetch returns nothing (registry not wired or
+  // fetch failed), fall back to the draft's current type so the form
+  // never shows an empty dropdown.
+  const typeOptions = types?.length ? types : [draft.type ?? "redirect"];
+
   return (
     <form onSubmit={submit}>
+      {error && <div className="form-error">{error}</div>}
+
       {mode === "create" && (
         <div className="form-group">
           <label htmlFor="type">Type</label>
-          <input
+          <select
             id="type"
-            type="text"
             value={draft.type ?? ""}
             onChange={(e) => update("type", e.target.value)}
-            placeholder="redirect"
             required
-          />
+          >
+            {typeOptions.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 
