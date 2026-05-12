@@ -1,13 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
 	"os"
@@ -94,11 +92,6 @@ func run() error {
 	mux := http.NewServeMux()
 	mux.Handle("/", service.Handler())
 
-	if dashTmpl := loadDashboardTemplate(templateDir); dashTmpl != nil {
-		mux.HandleFunc("GET /dashboard", handleDashboard(service, dashTmpl, logger))
-		logger.Info("dashboard enabled at /dashboard")
-	}
-
 	var handler http.Handler = mux
 	if apiKey := os.Getenv("DEEPLINK_API_KEY"); apiKey != "" {
 		handler = withAPIKey(handler, apiKey)
@@ -182,13 +175,14 @@ func discoverTemplateDir(configured string) string {
 	return ""
 }
 
-// withAPIKey protects POST requests with a constant-time token check.
-// Accepts both "Authorization: Bearer <key>" and "X-API-Key: <key>".
-// GET routes (redirects, previews, dashboard) are not affected.
+// withAPIKey protects mutating requests (POST, PATCH, DELETE) with a
+// constant-time token check. Accepts both "Authorization: Bearer <key>"
+// and "X-API-Key: <key>". GET routes (redirects, previews) are unaffected.
 func withAPIKey(next http.Handler, key string) http.Handler {
 	keyBytes := []byte(key)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
+		switch r.Method {
+		case http.MethodPost, http.MethodPatch, http.MethodDelete:
 			token := r.Header.Get("X-API-Key")
 			if token == "" {
 				token = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -200,95 +194,6 @@ func withAPIKey(next http.Handler, key string) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-// dashboardMaxLinks caps the number of links loaded into memory per
-// request. The dashboard is a single-page HTML view, not a paginated
-// API — keeping this bounded avoids memory spikes on large instances.
-const dashboardMaxLinks = 500
-
-type dashboardLink struct {
-	ShortID   string
-	ShortLink string
-	URL       string
-	Clicks    int64
-}
-
-type dashboardData struct {
-	Links       []dashboardLink
-	TotalLinks  int
-	TotalClicks int64
-}
-
-func loadDashboardTemplate(templateDir string) *template.Template {
-	if templateDir == "" {
-		return nil
-	}
-	path := filepath.Join(templateDir, "dashboard.html")
-	if _, err := os.Stat(path); err != nil {
-		return nil
-	}
-	tmpl, err := template.ParseFiles(path)
-	if err != nil {
-		return nil
-	}
-	return tmpl
-}
-
-func handleDashboard(service *deeplink.Service, tmpl *template.Template, logger *slog.Logger) http.HandlerFunc {
-	cfg := service.Config()
-	return func(w http.ResponseWriter, r *http.Request) {
-		var raw []deeplink.LinkInfo
-		for _, linkType := range service.Types() {
-			var cursor uint64
-			for {
-				links, next, err := cfg.Store.List(r.Context(), linkType, cursor, 100)
-				if err != nil {
-					logger.Error("dashboard: failed to list links", "error", err, "type", linkType)
-					break
-				}
-				raw = append(raw, links...)
-				if len(raw) >= dashboardMaxLinks {
-					break
-				}
-				if next == 0 {
-					break
-				}
-				cursor = next
-			}
-			if len(raw) >= dashboardMaxLinks {
-				raw = raw[:dashboardMaxLinks]
-				break
-			}
-		}
-
-		links := make([]dashboardLink, len(raw))
-		var totalClicks int64
-		for i, l := range raw {
-			links[i] = dashboardLink{
-				ShortID:   l.ShortLink,
-				ShortLink: cfg.BaseURL + l.ShortLink,
-				URL:       l.URL,
-				Clicks:    l.Clicks,
-			}
-			totalClicks += l.Clicks
-		}
-
-		var buf bytes.Buffer
-		if err := tmpl.Execute(&buf, dashboardData{
-			Links:       links,
-			TotalLinks:  len(links),
-			TotalClicks: totalClicks,
-		}); err != nil {
-			logger.Error("dashboard: template error", "error", err)
-			http.Error(w, "render error", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "text/html")
-		w.Header().Set("Cache-Control", "public, max-age=60")
-		_, _ = w.Write(buf.Bytes())
-	}
 }
 
 func loadSkipPaths(configured string) ([]string, error) {

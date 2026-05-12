@@ -11,3 +11,8 @@ seed.sh
 /deeplink
 /cmd/deeplink/deeplink
 /example/custom/custom
+
+# Dashboard SPA
+/web/node_modules
+/web/dist
+/web/*.log

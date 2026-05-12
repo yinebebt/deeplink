@@ -79,16 +79,13 @@ go run ./cmd/deeplink
 | Method | Path | Description |
 | --- | --- | --- |
 | POST | `/shorten` | Create a short link |
+| PATCH | `/{shortID}` | Update mutable fields on a link |
+| DELETE | `/{shortID}` | Soft-delete a link (3h grace) |
 | GET | `/{shortID}` | Preview page (or 302 redirect) |
+| GET | `/links` | All links across types (dashboard data source) |
 | GET | `/links/{type}` | List links by type |
 | GET | `/links/{type}/{shortID}` | Link detail with click count |
 | GET | `/health` | Health check |
-
-The standalone server (`cmd/deeplink`) also registers:
-
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/dashboard` | Read-only link stats page (requires `dashboard.html` in template dir) |
 
 When any store URL is set (`AndroidStoreURL`, `IOSStoreURL`, `WebFallbackURL`), these are also registered:
 
@@ -193,6 +190,34 @@ curl -X POST http://localhost:8090/shorten \
 
 Preview pages also emit `<meta name="robots" content="noindex,follow">` so
 short links do not compete with the destination URL in search rankings.
+
+## Dashboard
+
+A standalone React + TypeScript dashboard lives in [`web/`](web/). It
+talks to the Go service over HTTP and shares the repo's root `.env`.
+
+```bash
+cd web
+npm install
+npm run dev     # http://localhost:5173
+```
+
+One env var configures it (in root `.env`):
+
+```
+VITE_API_URL=http://localhost:8091
+```
+
+- `npm run dev` uses it as the Vite proxy target only — the browser hits
+  `:5173`, so there is no CORS and the scheme is optional.
+- `npm run build` bakes it into the bundle as an absolute base, so the
+  static dist can be hosted on any origin. Scheme required.
+
+The dashboard reads the API key from `localStorage` (`deeplink.apiKey`)
+and sends it as `X-API-Key` on mutating requests, so set
+`DEEPLINK_API_KEY` server-side to enable enforcement. When the SPA runs
+on a different origin in production, add that origin to
+`DEEPLINK_ALLOWED_ORIGINS`.
 
 ## Development
 

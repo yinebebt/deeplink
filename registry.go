@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 )
 
@@ -47,7 +48,7 @@ func (r *Registry) Register(p Processor) {
 func (r *Registry) Get(linkType string) Processor {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.processors[linkType]
+	return r.processors[strings.ToLower(linkType)]
 }
 
 // Types returns all registered type names.
