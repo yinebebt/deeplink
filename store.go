@@ -22,8 +22,10 @@ type Store interface {
 	// purge after [DeleteGracePeriod]. Returns [ErrNotFound] if the id
 	// does not exist or is already past grace.
 	Delete(ctx context.Context, id string) error
-	// IncrClick increments the click counter for id and returns the new count.
-	IncrClick(ctx context.Context, id string) (int64, error)
+	// IncrClickBy adds delta to the click counter for id and returns the new
+	// count. The async click flusher batches a resolve burst into one call
+	// per link, so delta is typically > 1.
+	IncrClickBy(ctx context.Context, id string, delta int64) (int64, error)
 	// Clicks returns the current click count for id.
 	Clicks(ctx context.Context, id string) (int64, error)
 	// List returns links matching linkType.
@@ -33,4 +35,13 @@ type Store interface {
 	// Returned [LinkResponse.ShortLink] values contain only the short ID;
 	// the HTTP layer prefixes them with the configured base URL.
 	List(ctx context.Context, linkType string, cursor uint64, count int64) ([]LinkResponse, uint64, error)
+
+	// RecordEvents persists a batch of click events for analytics breakdowns,
+	// called from the background flusher. The slice is reused after the call
+	// returns — do not retain it.
+	RecordEvents(ctx context.Context, events []ClickEvent) error
+
+	// Stats returns aggregated click breakdowns for a short ID. Breakdown
+	// maps are empty when no events have been recorded.
+	Stats(ctx context.Context, shortID string) (Stats, error)
 }

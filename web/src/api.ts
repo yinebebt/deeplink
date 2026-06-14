@@ -1,4 +1,4 @@
-import type { LinkDraft, LinkResponse } from "./types";
+import type { LinkDraft, LinkResponse, Stats } from "./types";
 
 const API_KEY_STORAGE = "deeplink.apiKey";
 
@@ -60,6 +60,10 @@ export function listLinks(): Promise<LinkResponse[]> {
 
 export function listTypes(): Promise<string[]> {
   return request<string[]>("/types");
+}
+
+export function getStats(shortID: string): Promise<Stats> {
+  return request<Stats>(`/stats/${shortID}`);
 }
 
 export function createLink(draft: LinkDraft): Promise<{ short_url: string }> {

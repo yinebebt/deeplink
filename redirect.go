@@ -24,8 +24,15 @@ func (RedirectProcessor) Process(_ context.Context, payload *Link) error {
 	if target == "" {
 		return NewError(fmt.Errorf("missing redirect URL"), http.StatusBadRequest, "url is required")
 	}
-	if _, err := url.ParseRequestURI(target); err != nil {
+	u, err := url.ParseRequestURI(target)
+	if err != nil {
 		return NewError(err, http.StatusBadRequest, "url must be a valid absolute URL")
+	}
+	// Restrict to http(s): the preview page assigns the destination to
+	// window.location.href, so a javascript:/data: URL would be stored XSS.
+	// Universal/App Links are https; custom schemes need a dedicated processor.
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return NewError(fmt.Errorf("disallowed url scheme %q", u.Scheme), http.StatusBadRequest, "url must use http or https")
 	}
 
 	payload.URL = target

@@ -7,12 +7,13 @@ import (
 	"time"
 )
 
-// clickTracker buffers click events and flushes them to the store
-// in the background, keeping the redirect path fast.
+// clickTracker buffers click events and flushes them to the store in the
+// background, keeping the redirect path fast. Each flush bumps the per-link
+// click counter and records the raw events for analytics breakdowns.
 type clickTracker struct {
 	store    Store
 	logger   *slog.Logger
-	events   chan string
+	events   chan ClickEvent
 	interval time.Duration
 	done     chan struct{}
 	wg       sync.WaitGroup
@@ -22,7 +23,7 @@ func newClickTracker(store Store, logger *slog.Logger, bufSize int, interval tim
 	ct := &clickTracker{
 		store:    store,
 		logger:   logger,
-		events:   make(chan string, bufSize),
+		events:   make(chan ClickEvent, bufSize),
 		interval: interval,
 		done:     make(chan struct{}),
 	}
@@ -33,11 +34,11 @@ func newClickTracker(store Store, logger *slog.Logger, bufSize int, interval tim
 
 // track enqueues a click event. If the buffer is full the event is dropped
 // and a warning is logged — the redirect is never blocked.
-func (ct *clickTracker) track(shortID string) {
+func (ct *clickTracker) track(ev ClickEvent) {
 	select {
-	case ct.events <- shortID:
+	case ct.events <- ev:
 	default:
-		ct.logger.Warn("click buffer full, dropping event", "shortID", shortID)
+		ct.logger.Warn("click buffer full, dropping event", "shortID", ev.ShortID)
 	}
 }
 
@@ -47,7 +48,7 @@ func (ct *clickTracker) stop() {
 	ct.wg.Wait()
 }
 
-// run is the background loop. It collects IDs into a batch and flushes
+// run is the background loop. It collects events into a batch and flushes
 // either when the batch interval fires or when stop is called.
 func (ct *clickTracker) run() {
 	defer ct.wg.Done()
@@ -55,23 +56,23 @@ func (ct *clickTracker) run() {
 	ticker := time.NewTicker(ct.interval)
 	defer ticker.Stop()
 
-	batch := make(map[string]int64)
+	batch := make([]ClickEvent, 0, 64)
 
 	for {
 		select {
-		case id := <-ct.events:
-			batch[id]++
+		case ev := <-ct.events:
+			batch = append(batch, ev)
 
 		case <-ticker.C:
 			ct.flush(batch)
-			batch = make(map[string]int64)
+			batch = batch[:0]
 
 		case <-ct.done:
 			// Drain remaining events from the channel.
 			for {
 				select {
-				case id := <-ct.events:
-					batch[id]++
+				case ev := <-ct.events:
+					batch = append(batch, ev)
 				default:
 					ct.flush(batch)
 					return
@@ -81,8 +82,10 @@ func (ct *clickTracker) run() {
 	}
 }
 
-// flush writes accumulated counts to the store.
-func (ct *clickTracker) flush(batch map[string]int64) {
+// flush bumps the counter once per link (aggregating the batch), then records
+// the events for breakdowns. The two writes are independent, so breakdown
+// sums may drift from the click total — treat breakdowns as approximate.
+func (ct *clickTracker) flush(batch []ClickEvent) {
 	if len(batch) == 0 {
 		return
 	}
@@ -90,11 +93,17 @@ func (ct *clickTracker) flush(batch map[string]int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	for id, count := range batch {
-		for range count {
-			if _, err := ct.store.IncrClick(ctx, id); err != nil {
-				ct.logger.Warn("failed to flush click", "error", err, "shortID", id)
-			}
+	counts := make(map[string]int64, len(batch))
+	for _, ev := range batch {
+		counts[ev.ShortID]++
+	}
+	for id, count := range counts {
+		if _, err := ct.store.IncrClickBy(ctx, id, count); err != nil {
+			ct.logger.Warn("failed to flush clicks", "error", err, "shortID", id, "count", count)
 		}
+	}
+
+	if err := ct.store.RecordEvents(ctx, batch); err != nil {
+		ct.logger.Warn("failed to record click events", "error", err, "count", len(batch))
 	}
 }

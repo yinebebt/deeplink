@@ -13,6 +13,21 @@ interface Props {
 
 const OG_TYPES = ["", "website", "article", "profile", "book", "video.movie"];
 
+// datetime-local <-> RFC 3339. The input edits wall-clock local time; the
+// API wants an absolute RFC 3339 instant (UTC). Empty stays empty (no expiry).
+function toLocalInput(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function fromLocalInput(local: string): string | undefined {
+  if (!local) return undefined;
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
 // Sensible defaults applied to new drafts. Width/height match OG's
 // recommended 1.91:1 hero ratio; og_type defaults to "website" (the most
 // common preview kind). Locale stays empty so the server's Config.Locale
@@ -109,6 +124,18 @@ export function LinkForm({ initial, mode, busy, error, types, onSubmit, onCancel
           onChange={(e) => update("description", e.target.value)}
         />
       </div>
+
+      {mode === "create" && (
+        <div className="form-group">
+          <label htmlFor="expires_at">Expires (optional)</label>
+          <input
+            id="expires_at"
+            type="datetime-local"
+            value={toLocalInput(draft.expires_at)}
+            onChange={(e) => update("expires_at", fromLocalInput(e.target.value))}
+          />
+        </div>
+      )}
 
       <button
         type="button"

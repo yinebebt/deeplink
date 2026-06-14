@@ -1,5 +1,6 @@
-import { useState } from "react";
-import type { LinkResponse } from "../types";
+import { useEffect, useState } from "react";
+import type { LinkResponse, Stats } from "../types";
+import { getStats } from "../api";
 
 interface Props {
   link: LinkResponse;
@@ -34,8 +35,47 @@ function Field({ label, value, mono, wide }: FieldProps) {
   );
 }
 
+function Breakdown({ title, data }: { title: string; data?: Record<string, number> }) {
+  const entries = Object.entries(data ?? {}).sort((a, b) => b[1] - a[1]);
+  const max = entries.reduce((m, [, n]) => Math.max(m, n), 0);
+  return (
+    <div className="breakdown">
+      <div className="breakdown-title">{title}</div>
+      {entries.length === 0 ? (
+        <div className="detail-value empty">—</div>
+      ) : (
+        entries.map(([key, n]) => (
+          <div key={key} className="breakdown-row">
+            <span className="breakdown-key" title={key}>
+              {key}
+            </span>
+            <span className="breakdown-bar">
+              <span style={{ width: `${max ? (n / max) * 100 : 0}%` }} />
+            </span>
+            <span className="breakdown-count">{n}</span>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 export function LinkDetail({ link, onEdit, onDelete, onClose }: Props) {
   const [copied, setCopied] = useState(false);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [statsError, setStatsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const id = link.short_id;
+    if (!id) return;
+    let active = true;
+    getStats(id)
+      .then((s) => active && setStats(s))
+      .catch((e) => active && setStatsError(e instanceof Error ? e.message : String(e)));
+    return () => {
+      active = false;
+    };
+  }, [link.short_id]);
 
   const copy = async () => {
     try {
@@ -105,6 +145,7 @@ export function LinkDetail({ link, onEdit, onDelete, onClose }: Props) {
         />
         <Field label="Created" value={formatDate(link.created_at)} mono />
         <Field label="Updated" value={formatDate(link.updated_at)} mono />
+        {link.expires_at && <Field label="Expires" value={formatDate(link.expires_at)} mono />}
         {link.deleted_at && <Field label="Deleted" value={formatDate(link.deleted_at)} mono />}
         {link.metadata && Object.keys(link.metadata).length > 0 && (
           <Field
@@ -112,6 +153,21 @@ export function LinkDetail({ link, onEdit, onDelete, onClose }: Props) {
             wide
             value={<pre className="detail-meta">{JSON.stringify(link.metadata, null, 2)}</pre>}
           />
+        )}
+      </div>
+
+      <div className="detail-analytics">
+        <div className="detail-section-title">Analytics</div>
+        {statsError ? (
+          <div className="detail-value empty">stats unavailable</div>
+        ) : !stats ? (
+          <div className="detail-value empty">loading…</div>
+        ) : (
+          <div className="breakdowns">
+            <Breakdown title="Platform" data={stats.by_platform} />
+            <Breakdown title="Referrer" data={stats.by_referrer} />
+            <Breakdown title="By day" data={stats.by_day} />
+          </div>
         )}
       </div>
 

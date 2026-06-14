@@ -18,6 +18,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/yinebebt/deeplink"
+	"github.com/yinebebt/deeplink/redisstore"
+	"github.com/yinebebt/deeplink/sqlitestore"
 )
 
 func main() {
@@ -38,35 +40,21 @@ func run() error {
 		return err
 	}
 
-	redisAddr := env("DEEPLINK_REDIS_ADDR", "localhost:6379")
-	redisPassword := os.Getenv("DEEPLINK_REDIS_PASSWORD")
-
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Password: redisPassword,
-		DB:       0,
-	})
-	defer func() {
-		if err := redisClient.Close(); err != nil {
-			logger.Warn("failed to close redis client", "error", err)
-		}
-	}()
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if err := redisClient.Ping(pingCtx).Err(); err != nil {
-		return fmt.Errorf("ping redis: %w", err)
+	store, closeStore, err := buildStore(ctx, logger)
+	if err != nil {
+		return err
 	}
+	defer closeStore()
 
 	clickBufSize, _ := strconv.Atoi(env("DEEPLINK_CLICK_BUFFER_SIZE", "0"))
 	clickFlushInterval, _ := time.ParseDuration(env("DEEPLINK_CLICK_FLUSH_INTERVAL", "0"))
 
 	cfg := deeplink.Config{
 		BaseURL:            baseURL,
-		Store:              deeplink.NewRedisStore(redisClient),
+		Store:              store,
 		Logger:             logger,
 		TemplateDir:        templateDir,
 		SkipPaths:          skipPaths,
@@ -133,6 +121,48 @@ func run() error {
 	}
 
 	return nil
+}
+
+// buildStore constructs the store named by DEEPLINK_STORE (default "sqlite"),
+// returning it with a cleanup func. SQLite is persistent and zero-infra;
+// redis suits multi-instance setups; memory is non-persistent (dev/tests).
+func buildStore(ctx context.Context, logger *slog.Logger) (deeplink.Store, func(), error) {
+	switch backend := env("DEEPLINK_STORE", "sqlite"); backend {
+	case "sqlite":
+		dsn := env("DEEPLINK_SQLITE_DSN", "deeplink.db")
+		store, err := sqlitestore.New(dsn) //nolint:contextcheck // schema init is a one-shot at startup
+		if err != nil {
+			return nil, nil, fmt.Errorf("open sqlite store: %w", err)
+		}
+		logger.Info("using sqlite store", "dsn", dsn)
+		return store, func() { _ = store.Close() }, nil
+
+	case "redis":
+		client := redis.NewClient(&redis.Options{
+			Addr:     env("DEEPLINK_REDIS_ADDR", "localhost:6379"),
+			Password: os.Getenv("DEEPLINK_REDIS_PASSWORD"),
+			DB:       0,
+		})
+		pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := client.Ping(pingCtx).Err(); err != nil {
+			_ = client.Close()
+			return nil, nil, fmt.Errorf("ping redis: %w", err)
+		}
+		logger.Info("using redis store")
+		return redisstore.New(client), func() {
+			if err := client.Close(); err != nil {
+				logger.Warn("failed to close redis client", "error", err)
+			}
+		}, nil
+
+	case "memory":
+		logger.Warn("using in-memory store: links do not survive restart")
+		return deeplink.NewMemoryStore(), func() {}, nil
+
+	default:
+		return nil, nil, fmt.Errorf("unknown DEEPLINK_STORE %q (want sqlite, redis, or memory)", backend)
+	}
 }
 
 func newLogger() *slog.Logger {

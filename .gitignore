@@ -16,3 +16,7 @@ seed.sh
 /web/node_modules
 /web/dist
 /web/*.log
+.env*.local
+*.db
+*.db-shm
+*.db-wal

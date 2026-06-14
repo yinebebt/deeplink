@@ -10,6 +10,7 @@ export interface Link {
   image_alt?: string;
   og_type?: string;
   locale?: string;
+  expires_at?: string;
   created_at?: string;
   updated_at?: string;
   deleted_at?: string;
@@ -22,3 +23,11 @@ export interface LinkResponse extends Link {
 }
 
 export type LinkDraft = Omit<Link, "short_id" | "created_at" | "updated_at" | "deleted_at">;
+
+export interface Stats {
+  short_id: string;
+  clicks: number;
+  by_platform?: Record<string, number>;
+  by_referrer?: Record<string, number>;
+  by_day?: Record<string, number>;
+}

@@ -34,6 +34,8 @@ export default defineConfig(({ mode }) => {
       proxy: {
         "/shorten": apiURL,
         "/links": apiURL,
+        "/types": apiURL,
+        "/stats": apiURL,
         // PATCH/DELETE /{shortID} go through the API; GETs stay with Vite.
         "^/[A-Za-z0-9_-]{6,}$": apiProxy,
       },

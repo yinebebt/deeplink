@@ -1,7 +1,7 @@
 # deeplink
 
-Short link generation, click tracking, and OG preview pages for Go.
-Pluggable processors, Redis or in-memory storage, two dependencies.
+Short link generation, click analytics, link expiry, and OG preview pages for Go.
+Pluggable processors; in-memory, Redis, or SQLite storage; one dependency in the core.
 
 [![CI](https://github.com/yinebebt/deeplink/actions/workflows/ci.yml/badge.svg)](https://github.com/yinebebt/deeplink/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/yinebebt/deeplink.svg)](https://pkg.go.dev/github.com/yinebebt/deeplink)
@@ -74,6 +74,62 @@ docker compose up -d
 go run ./cmd/deeplink
 ```
 
+## Stores
+
+Any `Store` implementation works; the destination determines persistence.
+All built-in stores carry the full feature set — link expiry and click
+analytics included:
+
+| Store | Import | Persistent | Analytics storage |
+| --- | --- | --- | --- |
+| `deeplink.NewMemoryStore()` | core | no | aggregate maps |
+| `redisstore.New(client)` | `deeplink/redisstore` | yes | aggregate hashes (HINCRBY) |
+| `sqlitestore.New(dsn)` | `deeplink/sqlitestore` | yes | per-visit event rows |
+
+```go
+import "github.com/yinebebt/deeplink/sqlitestore"
+
+store, err := sqlitestore.New("deeplink.db")
+```
+
+The Redis and SQLite stores live in subpackages, so their drivers
+(`go-redis`, `modernc.org/sqlite`) are only pulled in when you import them —
+the core stays at a single dependency (`go-nanoid`). Need another backend?
+Implement the [`Store`](https://pkg.go.dev/github.com/yinebebt/deeplink#Store)
+interface, including the two analytics methods (`RecordEvents` and `Stats`).
+
+## Link expiry
+
+Set `expires_at` (RFC 3339, must be in the future) to make a link
+self-destruct. After it passes, the link resolves as `404` and stores purge
+it (Redis via a native TTL, others lazily on read):
+
+```bash
+curl -X POST http://localhost:8090/shorten \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"redirect","url":"https://example.com","expires_at":"2026-12-31T23:59:59Z"}'
+```
+
+Omit `expires_at` for a link that never expires.
+
+## Click analytics
+
+Every resolved visit is captured off the redirect path and flushed in the
+background — bumping the click counter and recording the event for
+breakdowns, which every store supports. Query them at `GET /stats/{shortID}`:
+
+```json
+{
+  "short_id": "aBcD…",
+  "clicks": 1280,
+  "by_platform": {"android": 700, "ios": 500, "web": 80},
+  "by_referrer": {"t.co": 410, "facebook.com": 260},
+  "by_day":      {"2026-06-13": 640, "2026-06-14": 640}
+}
+```
+
+Platform, device, browser, OS, and referrer are derived from the request.
+
 ## HTTP routes
 
 | Method | Path | Description |
@@ -85,6 +141,7 @@ go run ./cmd/deeplink
 | GET | `/links` | All links across types (dashboard data source) |
 | GET | `/links/{type}` | List links by type |
 | GET | `/links/{type}/{shortID}` | Link detail with click count |
+| GET | `/stats/{shortID}` | Click analytics breakdowns |
 | GET | `/health` | Health check |
 
 When any store URL is set (`AndroidStoreURL`, `IOSStoreURL`, `WebFallbackURL`), these are also registered:
@@ -100,53 +157,28 @@ and `assetlinks.json` files in `<TemplateDir>/.well-known/`.
 
 ## Configuration
 
-Environment variables for `cmd/deeplink`:
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `DEEPLINK_LISTEN_ADDR` | `:8090` | Listen address |
-| `DEEPLINK_BASE_URL` | `http://localhost:8090/` | Base URL for short links |
-| `DEEPLINK_REDIS_ADDR` | `localhost:6379` | Redis address |
-| `DEEPLINK_REDIS_PASSWORD` | | Redis password |
-| `DEEPLINK_ALLOWED_ORIGINS` | | CORS origins (comma-separated) |
-| `DEEPLINK_TEMPLATE_DIR` | `templates/default` | Template directory |
-| `DEEPLINK_SKIP_PATHS_FILE` | | Skip-path regex file |
-| `DEEPLINK_CLICK_BUFFER_SIZE` | `1024` | Async click event buffer capacity |
-| `DEEPLINK_CLICK_FLUSH_INTERVAL` | `1s` | How often buffered clicks are flushed to the store |
-| `DEEPLINK_API_KEY` | | Protect mutating endpoints (`Authorization: Bearer <key>` or `X-API-Key: <key>`) |
-| `DEEPLINK_SITE_NAME` | | `og:site_name` on every preview |
-| `DEEPLINK_LOCALE` | `en_US` | Default `og:locale` (per-link `locale` overrides) |
-| `DEEPLINK_TWITTER_SITE` | | `twitter:site` (e.g. `@example`) |
-| `DEEPLINK_FEDIVERSE_CREATOR` | | `fediverse:creator` (e.g. `@user@instance.tld`) |
+`cmd/deeplink` reads its configuration from environment variables — see
+[`.env.example`](.env.example) for the full list with defaults. Setting
+`DEEPLINK_API_KEY` enables auth on the mutating endpoints, sent as
+`Authorization: Bearer <key>` or `X-API-Key`.
 
 ## Templates
 
-The default templates in `templates/default/` use these fields from `Link`:
+The default templates live in `templates/default/`; copy them and point
+`TemplateDir` at the copy to customize. They render the
+[preview metadata](#link-preview-metadata) fields plus `{{.ShortURL}}`,
+`{{.Lang}}`, and the store-fallback URLs (`{{.AndroidStoreURL}}`,
+`{{.IOSStoreURL}}`, `{{.WebFallbackURL}}`).
 
-| Field | Template variable | Used for |
-| --- | --- | --- |
-| URL | `{{.URL}}` | Redirect target |
-| Title | `{{.Title}}` | Page title, og:title, twitter:title |
-| Description | `{{.Description}}` | og:description, twitter:description |
-| ImageURL | `{{.ImageURL}}` | og:image, twitter:image |
-| ImageWidth | `{{.ImageWidth}}` | og:image:width |
-| ImageHeight | `{{.ImageHeight}}` | og:image:height |
-| ImageAlt | `{{.ImageAlt}}` | og:image:alt, twitter:image:alt |
-| OGType | `{{.OGType}}` | og:type (defaults to `website`) |
-| Locale | `{{.Locale}}` | og:locale (per-link override) |
-| Lang | `{{.Lang}}` | `<html lang>` (derived from Locale) |
-| CreatedAt | `{{.CreatedAt}}` | article:published_time |
-| UpdatedAt | `{{.UpdatedAt}}` | og:updated_time, article:modified_time |
-| ShortURL | `{{.ShortURL}}` | canonical link, og:url |
-
-To customize, copy `templates/default/` and set `TemplateDir` in config.
+The default `link.html` tries the destination first (so an installed app
+opens via its Universal/App Link) and, after a short timeout, falls back to
+the right app store by platform — with no store URLs it just forwards to the
+destination.
 
 ## Link preview metadata
 
-Preview pages emit standard Open Graph, Twitter Card, and fediverse meta
-tags consumed by every platform that scrapes link previews. Every tag is
-gated on its source value: empty fields are not emitted, so scrapers never
-see `content=""` warnings.
+Preview pages emit Open Graph, Twitter Card, and fediverse tags. Empty fields
+are omitted, so scrapers never see `content=""`.
 
 ### Per-link fields (`Link`)
 
@@ -170,54 +202,21 @@ see `content=""` warnings.
 | `TwitterSite` | `twitter:site` (e.g. `@example`) |
 | `FediverseCreator` | `fediverse:creator` (e.g. `@user@instance.tld`) |
 
-### Example payload
-
-```bash
-curl -X POST http://localhost:8090/shorten \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "type": "redirect",
-    "url": "https://example.com/posts/launch",
-    "title": "We just launched",
-    "description": "What is new in v2",
-    "image_url": "https://cdn.example.com/og/launch.png",
-    "image_width": 1200,
-    "image_height": 630,
-    "image_alt": "v2 launch cover",
-    "og_type": "article"
-  }'
-```
-
-Preview pages also emit `<meta name="robots" content="noindex,follow">` so
-short links do not compete with the destination URL in search rankings.
+Pages also emit `robots: noindex,follow` so short links don't compete with
+the destination URL in search.
 
 ## Dashboard
 
-A standalone React + TypeScript dashboard lives in [`web/`](web/). It
-talks to the Go service over HTTP and shares the repo's root `.env`.
+A React + TypeScript dashboard lives in [`web/`](web/), configured by
+`VITE_API_URL` (see [`.env.example`](.env.example)).
 
 ```bash
-cd web
-npm install
-npm run dev     # http://localhost:5173
+cd web && npm install && npm run dev   # http://localhost:5173
 ```
 
-One env var configures it (in root `.env`):
-
-```
-VITE_API_URL=http://localhost:8091
-```
-
-- `npm run dev` uses it as the Vite proxy target only — the browser hits
-  `:5173`, so there is no CORS and the scheme is optional.
-- `npm run build` bakes it into the bundle as an absolute base, so the
-  static dist can be hosted on any origin. Scheme required.
-
-The dashboard reads the API key from `localStorage` (`deeplink.apiKey`)
-and sends it as `X-API-Key` on mutating requests, so set
-`DEEPLINK_API_KEY` server-side to enable enforcement. When the SPA runs
-on a different origin in production, add that origin to
-`DEEPLINK_ALLOWED_ORIGINS`.
+It reads the API key from `localStorage` (`deeplink.apiKey`) and sends it as
+`X-API-Key`, so set `DEEPLINK_API_KEY` to enforce auth. For a cross-origin
+deploy, add the origin to `DEEPLINK_ALLOWED_ORIGINS`.
 
 ## Development
 
