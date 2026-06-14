@@ -3,6 +3,7 @@ package deeplink
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -32,10 +33,23 @@ func (s *Service) shortenURL(ctx context.Context, payload *Link) (string, error)
 		return "", fmt.Errorf("failed to generate ID after %d attempts (check SkipPaths)", maxIDRetries)
 	}
 
+	now := time.Now().UTC()
+	if payload.ExpiresAt != "" {
+		exp, err := time.Parse(time.RFC3339, payload.ExpiresAt)
+		if err != nil {
+			return "", NewError(err, http.StatusBadRequest, "expires_at must be an RFC 3339 timestamp")
+		}
+		if !exp.After(now) {
+			return "", NewError(fmt.Errorf("expires_at %s is not in the future", payload.ExpiresAt), http.StatusBadRequest, "expires_at must be in the future")
+		}
+		// Normalize so stores see a consistent UTC form.
+		payload.ExpiresAt = exp.UTC().Format(time.RFC3339)
+	}
+
 	payload.ShortID = id
-	now := time.Now().UTC().Format(time.RFC3339)
-	payload.CreatedAt = now
-	payload.UpdatedAt = now
+	stamp := now.Format(time.RFC3339)
+	payload.CreatedAt = stamp
+	payload.UpdatedAt = stamp
 
 	if err := s.config.Store.Save(ctx, id, payload); err != nil {
 		return "", fmt.Errorf("store payload: %w", err)
@@ -45,7 +59,8 @@ func (s *Service) shortenURL(ctx context.Context, payload *Link) (string, error)
 	return s.config.BaseURL + id, nil
 }
 
-// expandURL looks up a short ID, increments clicks, and returns the payload.
+// expandURL looks up a short ID. Click tracking is done by the caller (the
+// resolve handlers), which hold the request to build a [ClickEvent].
 func (s *Service) expandURL(ctx context.Context, shortID string) (*Link, error) {
 	shortID = strings.TrimPrefix(shortID, s.config.BaseURL)
 
@@ -53,8 +68,6 @@ func (s *Service) expandURL(ctx context.Context, shortID string) (*Link, error) 
 	if err != nil {
 		return nil, fmt.Errorf("expand URL %s: %w", shortID, err)
 	}
-
-	s.clicks.track(shortID)
 
 	return payload, nil
 }

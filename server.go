@@ -39,6 +39,8 @@ func (s *Service) Handler() http.Handler {
 	mux.HandleFunc("GET /types", s.handleTypes)
 	mux.HandleFunc("GET /health", handleHealth)
 
+	mux.HandleFunc("GET /stats/{shortID}", s.handleStats)
+
 	if s.config.hasMobileRoutes() {
 		mux.HandleFunc("GET /.well-known/", s.handleWellKnown)
 		mux.HandleFunc("GET /redirect", s.handleRedirect)
@@ -75,13 +77,19 @@ func (s *Service) handleGenerate(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err := s.shortenURL(r.Context(), &payload)
 	if err != nil {
+		// Preserve a deliberate status (e.g. 400 for a bad expires_at);
+		// wrap anything else as a 500.
+		if appErr, ok := errors.AsType[*Error](err); ok {
+			s.respondError(w, appErr)
+			return
+		}
 		s.config.Logger.Error("failed to shorten URL", "error", err, "type", payload.Type)
 		s.respondError(w, NewError(err, http.StatusInternalServerError, "failed to shorten URL"))
 		return
 	}
 
 	respondJSON(w, http.StatusCreated, map[string]string{"short_url": shortURL})
-	s.config.Logger.Info("link generated", "shortID", strings.TrimPrefix(shortURL, s.config.BaseURL), "type", payload.Type, "duration", time.Since(start))
+	s.config.Logger.Info("link generated", "shortID", strings.TrimPrefix(shortURL, s.config.BaseURL), "type", payload.Type, "duration", time.Since(start).String())
 }
 
 func (s *Service) handlePreview(w http.ResponseWriter, r *http.Request) {
@@ -106,6 +114,8 @@ func (s *Service) handlePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.clicks.track(newClickEvent(r, shortID))
+
 	tmpl := s.templates["link"]
 	if tmpl == nil {
 		http.Redirect(w, r, payload.URL, http.StatusFound)
@@ -121,7 +131,7 @@ func (s *Service) handlePreview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writePreviewHTML(w, buf.Bytes())
-	s.config.Logger.Info("preview rendered", "shortID", shortID, "type", payload.Type, "duration", time.Since(start))
+	s.config.Logger.Info("preview rendered", "shortID", shortID, "type", payload.Type, "duration", time.Since(start).String())
 }
 
 // handleStaticPreview renders a preview page without auto-redirect.
@@ -144,6 +154,8 @@ func (s *Service) handleStaticPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.clicks.track(newClickEvent(r, shortID))
+
 	previewData := s.buildPreviewData(payload)
 	tmpl := s.templates["preview"]
 	if tmpl == nil {
@@ -159,7 +171,7 @@ func (s *Service) handleStaticPreview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writePreviewHTML(w, buf.Bytes())
-	s.config.Logger.Info("preview rendered (no redirect)", "shortID", shortID, "type", payload.Type, "duration", time.Since(start))
+	s.config.Logger.Info("preview rendered (no redirect)", "shortID", shortID, "type", payload.Type, "duration", time.Since(start).String())
 }
 
 func (s *Service) handleRedirect(w http.ResponseWriter, r *http.Request) {
@@ -184,6 +196,27 @@ func (s *Service) handleRedirect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, target, http.StatusFound)
+}
+
+// handleStats serves aggregated click analytics for a link.
+func (s *Service) handleStats(w http.ResponseWriter, r *http.Request) {
+	shortID := r.PathValue("shortID")
+
+	payload, err := s.config.Store.Get(r.Context(), shortID)
+	if err != nil || payload.DeletedAt != "" {
+		s.config.Logger.Warn("stats link not found", "shortID", shortID, "error", err)
+		http.Error(w, "link not found", http.StatusNotFound)
+		return
+	}
+
+	stats, err := s.config.Store.Stats(r.Context(), shortID)
+	if err != nil {
+		s.config.Logger.Error("failed to fetch stats", "error", err, "shortID", shortID)
+		http.Error(w, "stats error", http.StatusInternalServerError)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, stats)
 }
 
 // listLinksByType collects every non-deleted link for linkType, prefixes
@@ -223,7 +256,7 @@ func (s *Service) handleLinkList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, out)
-	s.config.Logger.Info("links listed", "type", linkType, "count", len(out), "duration", time.Since(start))
+	s.config.Logger.Info("links listed", "type", linkType, "count", len(out), "duration", time.Since(start).String())
 }
 
 func (s *Service) handleLinkDetail(w http.ResponseWriter, r *http.Request) {
@@ -250,7 +283,7 @@ func (s *Service) handleLinkDetail(w http.ResponseWriter, r *http.Request) {
 		ShortLink: s.config.BaseURL + shortID,
 		Clicks:    clicks,
 	})
-	s.config.Logger.Info("link detail fetched", "shortID", shortID, "duration", time.Since(start))
+	s.config.Logger.Info("link detail fetched", "shortID", shortID, "duration", time.Since(start).String())
 }
 
 // linkListAllCap bounds GET /links so a runaway store cannot OOM the
@@ -278,7 +311,7 @@ func (s *Service) handleLinkListAll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, out)
-	s.config.Logger.Info("links listed (all)", "count", len(out), "duration", time.Since(start))
+	s.config.Logger.Info("links listed (all)", "count", len(out), "duration", time.Since(start).String())
 }
 
 // linkPatch carries optional updates for PATCH /{shortID}. Pointer fields
@@ -369,7 +402,7 @@ func (s *Service) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		ShortLink: s.config.BaseURL + shortID,
 		Clicks:    clicks,
 	})
-	s.config.Logger.Info("link updated", "shortID", shortID, "duration", time.Since(start))
+	s.config.Logger.Info("link updated", "shortID", shortID, "duration", time.Since(start).String())
 }
 
 func (s *Service) handleDelete(w http.ResponseWriter, r *http.Request) {
@@ -392,7 +425,7 @@ func (s *Service) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-	s.config.Logger.Info("link deleted", "shortID", shortID, "duration", time.Since(start))
+	s.config.Logger.Info("link deleted", "shortID", shortID, "duration", time.Since(start).String())
 }
 
 func (s *Service) handleWellKnown(w http.ResponseWriter, r *http.Request) {

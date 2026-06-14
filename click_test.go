@@ -11,14 +11,14 @@ func TestClickTrackerFlushesOnStop(t *testing.T) {
 	t.Parallel()
 
 	store := NewMemoryStore()
-	// Save a link so IncrClick has something to increment.
+	// Save a link so the click flush has something to increment.
 	_ = store.Save(context.Background(), "abc", &Link{Type: "basic", URL: "https://example.com"})
 
 	ct := newClickTracker(store, slog.Default(), 64, 10*time.Second)
 
-	ct.track("abc")
-	ct.track("abc")
-	ct.track("abc")
+	ct.track(ClickEvent{ShortID: "abc"})
+	ct.track(ClickEvent{ShortID: "abc"})
+	ct.track(ClickEvent{ShortID: "abc"})
 
 	// Stop drains the buffer.
 	ct.stop()
@@ -41,8 +41,8 @@ func TestClickTrackerFlushesOnInterval(t *testing.T) {
 	ct := newClickTracker(store, slog.Default(), 64, 50*time.Millisecond)
 	defer ct.stop()
 
-	ct.track("xyz")
-	ct.track("xyz")
+	ct.track(ClickEvent{ShortID: "xyz"})
+	ct.track(ClickEvent{ShortID: "xyz"})
 
 	// Wait for at least one flush cycle.
 	time.Sleep(150 * time.Millisecond)
@@ -63,12 +63,12 @@ func TestClickTrackerDropsWhenBufferFull(t *testing.T) {
 	// fills deterministically and the third send hits the drop path.
 	ct := &clickTracker{
 		logger: slog.Default(),
-		events: make(chan string, 2),
+		events: make(chan ClickEvent, 2),
 	}
 
-	ct.track("full")
-	ct.track("full")
-	ct.track("full") // dropped
+	ct.track(ClickEvent{ShortID: "full"})
+	ct.track(ClickEvent{ShortID: "full"})
+	ct.track(ClickEvent{ShortID: "full"}) // dropped
 
 	if got := len(ct.events); got != 2 {
 		t.Fatalf("buffered events = %d, want 2 (third should be dropped)", got)

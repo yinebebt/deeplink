@@ -1,9 +1,10 @@
 package deeplink
 
-// Link represents a deep link with its metadata.
-//
-// The core fields (Type, URL, Title, Description, ImageURL) drive the
-// built-in preview templates. Processors use Metadata for everything else.
+import "time"
+
+// Link represents a deep link with its metadata. The core fields (Type, URL,
+// Title, Description, ImageURL) drive the preview templates; processors use
+// Metadata for everything else.
 type Link struct {
 	// Type identifies the link type (e.g. "redirect").
 	Type string `json:"type,omitempty"`
@@ -32,6 +33,10 @@ type Link struct {
 	// Locale overrides the per-link og:locale (e.g. "en_US", "fr_FR").
 	// Empty falls back to Config.Locale.
 	Locale string `json:"locale,omitempty"`
+
+	// ExpiresAt is an optional RFC 3339 expiry, in the future at creation.
+	// Once past, the link resolves as not found and is purged. Empty: never.
+	ExpiresAt string `json:"expires_at,omitempty"`
 
 	// CreatedAt is an RFC 3339 timestamp. Set by the service.
 	CreatedAt string `json:"created_at,omitempty"`
@@ -63,15 +68,32 @@ func (l *Link) SetMeta(key string, value any) {
 	l.Metadata[key] = value
 }
 
-// LinkResponse is the wire shape returned by all link-reading endpoints
-// (list, detail, update). It embeds the stored [Link] and adds the
-// rendered short URL plus the current click count.
-//
-// At the store layer, ShortLink carries only the short ID; HTTP handlers
-// prefix it with [Config.BaseURL] before responding so callers see a full
-// URL.
+// LinkResponse is the wire shape from link-reading endpoints: the stored
+// [Link] plus its short URL and click count. At the store layer ShortLink
+// holds only the short ID; the HTTP layer prefixes it with [Config.BaseURL].
 type LinkResponse struct {
 	*Link
 	ShortLink string `json:"short_link"`
 	Clicks    int64  `json:"clicks"`
+}
+
+// ClickEvent is one resolved-link visit, captured at resolve time and
+// recorded asynchronously.
+type ClickEvent struct {
+	ShortID  string
+	Time     time.Time
+	Platform string // "android", "ios", or "web"
+	Device   string // "mobile", "desktop", or "bot"
+	Browser  string // browser family, e.g. "Chrome"; "" if unknown
+	OS       string // e.g. "Android", "iOS"; "" if unknown
+	Referrer string // Referer host, e.g. "t.co"; "" if absent
+}
+
+// Stats is the aggregated analytics for a link. Empty breakdowns are omitted.
+type Stats struct {
+	ShortID    string           `json:"short_id"`
+	Clicks     int64            `json:"clicks"`
+	ByPlatform map[string]int64 `json:"by_platform,omitempty"`
+	ByReferrer map[string]int64 `json:"by_referrer,omitempty"`
+	ByDay      map[string]int64 `json:"by_day,omitempty"`
 }

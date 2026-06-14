@@ -30,6 +30,11 @@ type previewView struct {
 	OGType           string
 	TwitterSite      string
 	FediverseCreator string
+	// Store URLs feed the link template's store fallback. Empty when not
+	// configured — the template then just forwards to the destination.
+	AndroidStoreURL string
+	IOSStoreURL     string
+	WebFallbackURL  string
 }
 
 // buildPreviewData wraps a Link with the config-derived rendering data the
@@ -57,6 +62,9 @@ func (s *Service) buildPreviewData(payload *Link) any {
 		OGType:           strings.ToLower(strings.TrimSpace(payload.OGType)),
 		TwitterSite:      s.config.TwitterSite,
 		FediverseCreator: s.config.FediverseCreator,
+		AndroidStoreURL:  s.config.AndroidStoreURL,
+		IOSStoreURL:      s.config.IOSStoreURL,
+		WebFallbackURL:   s.config.WebFallbackURL,
 	}
 }
 
@@ -76,6 +84,7 @@ func langFromLocale(locale string) string {
 // Content-Type and Cache-Control headers used by both preview handlers.
 func writePreviewHTML(w http.ResponseWriter, body []byte) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", previewCacheControl)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
