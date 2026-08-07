@@ -8,9 +8,7 @@ interface Props {
   onDelete: (link: LinkResponse) => void;
 }
 
-// prettyTarget renders only the host (+ first path segment) so long
-// query strings don't blow out row layout. Full URL stays in the title
-// tooltip and on the detail view.
+// Host + first path segment — keeps long query strings out of the row.
 function prettyTarget(raw: string): string {
   try {
     const u = new URL(raw);

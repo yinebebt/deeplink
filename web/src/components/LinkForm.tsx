@@ -13,8 +13,6 @@ interface Props {
 
 const OG_TYPES = ["", "website", "article", "profile", "book", "video.movie"];
 
-// datetime-local <-> RFC 3339. The input edits wall-clock local time; the
-// API wants an absolute RFC 3339 instant (UTC). Empty stays empty (no expiry).
 function toLocalInput(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -28,10 +26,6 @@ function fromLocalInput(local: string): string | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 }
 
-// Sensible defaults applied to new drafts. Width/height match OG's
-// recommended 1.91:1 hero ratio; og_type defaults to "website" (the most
-// common preview kind). Locale stays empty so the server's Config.Locale
-// fallback wins for new links.
 const CREATE_DEFAULTS: Partial<LinkDraft> = {
   type: "redirect",
   image_width: 1200,
@@ -54,7 +48,6 @@ export function LinkForm({ initial, mode, busy, error, types, onSubmit, onCancel
   const [draft, setDraft] = useState<LinkDraft>(
     initial ?? { ...CREATE_DEFAULTS },
   );
-  // Auto-expand when editing a link that already has any advanced field set.
   const [advancedOpen, setAdvancedOpen] = useState(
     mode === "edit" && hasAdvancedValues(initial ?? {}),
   );
@@ -67,9 +60,6 @@ export function LinkForm({ initial, mode, busy, error, types, onSubmit, onCancel
     void onSubmit(draft);
   };
 
-  // When the /types fetch returns nothing (registry not wired or
-  // fetch failed), fall back to the draft's current type so the form
-  // never shows an empty dropdown.
   const typeOptions = types?.length ? types : [draft.type ?? "redirect"];
 
   return (

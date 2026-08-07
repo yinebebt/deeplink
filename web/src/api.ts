@@ -2,9 +2,6 @@ import type { LinkDraft, LinkResponse, Stats } from "./types";
 
 const API_KEY_STORAGE = "deeplink.apiKey";
 
-// One env var (VITE_API_URL) describes the Go service URL. In dev,
-// fetches stay relative so Vite's proxy forwards them — no CORS, no
-// scheme footgun. In production builds the absolute URL is baked in.
 function normalizeURL(raw: string): string {
   const v = raw.trim().replace(/\/$/, "");
   if (!v) return "";
