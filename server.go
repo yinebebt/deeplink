@@ -286,12 +286,12 @@ func (s *Service) handleLinkDetail(w http.ResponseWriter, r *http.Request) {
 	s.config.Logger.Info("link detail fetched", "shortID", shortID, "duration", time.Since(start).String())
 }
 
-// linkListAllCap bounds GET /links so a runaway store cannot OOM the
-// dashboard. The dashboard is a single-page view, not a paginated API.
+// linkListAllCap bounds GET /links so a runaway store cannot OOM clients
+// that load the full list (e.g. the dashboard on the web branch).
 const linkListAllCap = 500
 
 // handleLinkListAll returns every non-deleted link across all registered
-// types. The dashboard SPA uses this as its single data source.
+// types (full list, not a paginated API).
 func (s *Service) handleLinkListAll(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
@@ -449,8 +449,7 @@ func (s *Service) handleWellKnown(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filePath)
 }
 
-// handleTypes returns all registered processor type names for the
-// dashboard's create-form dropdown.
+// handleTypes returns registered processor type names (e.g. for create forms).
 func (s *Service) handleTypes(w http.ResponseWriter, _ *http.Request) {
 	respondJSON(w, http.StatusOK, s.registry.Types())
 }
