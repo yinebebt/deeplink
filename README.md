@@ -67,11 +67,14 @@ See [example/custom](example/custom/) for a working custom processor with tests.
 
 ## Standalone server
 
-A ready-to-run Redis-backed server is included:
+SQLite by default (zero infra). Redis is optional for multi-instance setups:
 
 ```bash
-docker compose up -d
 go run ./cmd/deeplink
+
+# Redis:
+docker compose up -d
+DEEPLINK_STORE=redis go run ./cmd/deeplink
 ```
 
 ## Stores
@@ -205,24 +208,15 @@ are omitted, so scrapers never see `content=""`.
 Pages also emit `robots: noindex,follow` so short links don't compete with
 the destination URL in search.
 
-## Dashboard
+## Dashboard / site UI
 
-A React + TypeScript dashboard lives in [`web/`](web/), configured by
-`VITE_API_URL` (see [`.env.example`](.env.example)).
-
-```bash
-cd web && npm install && npm run dev   # http://localhost:5173
-```
-
-It reads the API key from `localStorage` (`deeplink.apiKey`) and sends it as
-`X-API-Key`, so set `DEEPLINK_API_KEY` to enforce auth. For a cross-origin
-deploy, add the origin to `DEEPLINK_ALLOWED_ORIGINS`.
+The React landing page and demo dashboard live on the [`web`](https://github.com/yinebebt/deeplink/tree/web) branch (not in `main`). Build and deploy that SPA separately against this API. Set `DEEPLINK_ALLOWED_ORIGINS` (and `DEEPLINK_API_KEY` for mutating routes) when the UI is cross-origin.
 
 ## Development
 
 ```bash
 go test ./...          # run tests
-go run ./cmd/deeplink  # run standalone server (needs Redis)
+go run ./cmd/deeplink  # standalone server (SQLite by default)
 ```
 
 ## License

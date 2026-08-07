@@ -12,11 +12,12 @@ seed.sh
 /cmd/deeplink/deeplink
 /example/custom/custom
 
-# Dashboard SPA
+# Dashboard SPA (this branch)
 /web/node_modules
 /web/dist
 /web/*.log
 .env*.local
+
 *.db
 *.db-shm
 *.db-wal

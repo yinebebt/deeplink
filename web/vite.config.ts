@@ -6,7 +6,7 @@ const repoRoot = path.resolve(__dirname, "..");
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, repoRoot, "");
-  const apiURL = env.VITE_API_URL || "http://localhost:8091";
+  const apiURL = env.VITE_API_URL || "http://localhost:8090";
 
   // GET/HEAD stay on Vite (SPA assets); other methods proxy to the Go API
   // so PATCH/DELETE /{shortID} don't collide with the root SPA route.
