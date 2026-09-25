@@ -162,8 +162,10 @@ and `assetlinks.json` files in `<TemplateDir>/.well-known/`.
 
 `cmd/deeplink` reads its configuration from environment variables — see
 [`.env.example`](.env.example) for the full list with defaults. Setting
-`DEEPLINK_API_KEY` enables auth on the mutating endpoints, sent as
-`Authorization: Bearer <key>` or `X-API-Key`.
+`DEEPLINK_API_KEY` enables auth on mutating endpoints and on `GET /links`
+and `GET /stats/{id}`, sent as `Authorization: Bearer <key>` or `X-API-Key`.
+Preview and redirect GETs stay public. Rotate the key if it has ever been
+pasted into chat or committed.
 
 ## Templates
 
@@ -210,7 +212,7 @@ the destination URL in search.
 
 ## Dashboard / site UI
 
-The React landing page and demo dashboard live on the [`web`](https://github.com/yinebebt/deeplink/tree/web) branch (not in `main`). Build and deploy that SPA separately against this API. Set `DEEPLINK_ALLOWED_ORIGINS` (and `DEEPLINK_API_KEY` for mutating routes) when the UI is cross-origin.
+The demo UI is on the [`web`](https://github.com/yinebebt/deeplink/tree/web) branch and at https://link.yinebebt.com.
 
 ## Development
 

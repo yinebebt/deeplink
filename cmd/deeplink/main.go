@@ -83,7 +83,7 @@ func run() error {
 	var handler http.Handler = mux
 	if apiKey := os.Getenv("DEEPLINK_API_KEY"); apiKey != "" {
 		handler = withAPIKey(handler, apiKey)
-		logger.Info("API key protection enabled for mutating endpoints")
+		logger.Info("API key protection enabled for mutating endpoints and link list/stats")
 	}
 
 	server := &http.Server{
@@ -205,25 +205,46 @@ func discoverTemplateDir(configured string) string {
 	return ""
 }
 
-// withAPIKey protects mutating requests (POST, PATCH, DELETE) with a
-// constant-time token check. Accepts both "Authorization: Bearer <key>"
-// and "X-API-Key: <key>". GET routes (redirects, previews) are unaffected.
+// withAPIKey protects mutating requests (POST, PATCH, DELETE) and the
+// dashboard list/stats GETs with a constant-time token check. Accepts both
+// "Authorization: Bearer <key>" and "X-API-Key: <key>". Preview and redirect
+// GETs stay public.
 func withAPIKey(next http.Handler, key string) http.Handler {
 	keyBytes := []byte(key)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost, http.MethodPatch, http.MethodDelete:
-			token := r.Header.Get("X-API-Key")
-			if token == "" {
-				token = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-			}
-			if subtle.ConstantTimeCompare([]byte(token), keyBytes) != 1 {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
+		if !requiresAPIKey(r.Method, r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		token := r.Header.Get("X-API-Key")
+		if token == "" {
+			token = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		}
+		if subtle.ConstantTimeCompare([]byte(token), keyBytes) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func requiresAPIKey(method, path string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPatch, http.MethodDelete:
+		return true
+	case http.MethodGet:
+		p := path
+		if p != "/" {
+			p = strings.TrimSuffix(p, "/")
+		}
+		if p == "/links" || strings.HasPrefix(p, "/links/") {
+			return true
+		}
+		if p == "/stats" || strings.HasPrefix(p, "/stats/") {
+			return true
+		}
+	}
+	return false
 }
 
 func loadSkipPaths(configured string) ([]string, error) {
