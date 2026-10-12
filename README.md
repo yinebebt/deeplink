@@ -212,7 +212,7 @@ the destination URL in search.
 
 ## Dashboard / site UI
 
-The demo UI is on the [`web`](https://github.com/yinebebt/deeplink/tree/web) branch and at https://link.yinebebt.com.
+The demo UI is on the [`web`](https://github.com/yinebebt/deeplink/tree/web) branch.
 
 ## Development
 
