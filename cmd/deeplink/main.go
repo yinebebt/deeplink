@@ -16,8 +16,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/redis/go-redis/v9"
 	"github.com/yinebebt/deeplink"
+	"github.com/yinebebt/deeplink/mcpserver"
 	"github.com/yinebebt/deeplink/redisstore"
 	"github.com/yinebebt/deeplink/sqlitestore"
 )
@@ -77,13 +79,22 @@ func run() error {
 	defer service.Close() //nolint:errcheck
 	service.Register(deeplink.RedirectProcessor{})
 
+	apiKey := os.Getenv("DEEPLINK_API_KEY")
+
 	mux := http.NewServeMux()
 	mux.Handle("/", service.Handler())
+	// The SDK's rebinding check blocks requests from a reverse proxy;
+	// the API key covers that risk, so keep the check only without a key.
+	mux.Handle("/mcp", mcpserver.Handler(service, &mcp.StreamableHTTPOptions{
+		Stateless:                  true,
+		JSONResponse:               true,
+		DisableLocalhostProtection: apiKey != "",
+	}))
 
 	var handler http.Handler = mux
-	if apiKey := os.Getenv("DEEPLINK_API_KEY"); apiKey != "" {
+	if apiKey != "" {
 		handler = withAPIKey(handler, apiKey)
-		logger.Info("API key protection enabled for mutating endpoints and link list/stats")
+		logger.Info("API key protection enabled for mutating endpoints, link list/stats, and /mcp")
 	}
 
 	server := &http.Server{
@@ -205,10 +216,10 @@ func discoverTemplateDir(configured string) string {
 	return ""
 }
 
-// withAPIKey protects mutating requests (POST, PATCH, DELETE) and the
-// dashboard list/stats GETs with a constant-time token check. Accepts both
-// "Authorization: Bearer <key>" and "X-API-Key: <key>". Preview and redirect
-// GETs stay public.
+// withAPIKey protects mutating requests (POST, PATCH, DELETE), the
+// dashboard list/stats GETs, and every /mcp request with a constant-time
+// token check. Accepts both "Authorization: Bearer <key>" and
+// "X-API-Key: <key>". Preview and redirect GETs stay public.
 func withAPIKey(next http.Handler, key string) http.Handler {
 	keyBytes := []byte(key)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -229,6 +240,9 @@ func withAPIKey(next http.Handler, key string) http.Handler {
 }
 
 func requiresAPIKey(method, path string) bool {
+	if path == "/mcp" {
+		return true
+	}
 	switch method {
 	case http.MethodPost, http.MethodPatch, http.MethodDelete:
 		return true

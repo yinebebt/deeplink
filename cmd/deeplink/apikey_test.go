@@ -20,6 +20,8 @@ func TestRequiresAPIKey(t *testing.T) {
 		{http.MethodGet, "/links/", true},
 		{http.MethodGet, "/links/redirect", true},
 		{http.MethodGet, "/stats/abc", true},
+		{http.MethodGet, "/mcp", true},
+		{http.MethodPost, "/mcp", true},
 		{http.MethodGet, "/abc", false},
 		{http.MethodGet, "/health", false},
 		{http.MethodGet, "/redirect", false},

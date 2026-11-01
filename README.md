@@ -1,6 +1,7 @@
 # deeplink
 
-Short link generation, click analytics, link expiry, and OG preview pages for Go.
+Short link generation, click analytics, link expiry, and OG preview pages for Go,
+with MCP tools so AI clients can manage links too.
 Pluggable processors; in-memory, Redis, or SQLite storage; one dependency in the core.
 
 [![CI](https://github.com/yinebebt/deeplink/actions/workflows/ci.yml/badge.svg)](https://github.com/yinebebt/deeplink/actions/workflows/ci.yml)
@@ -133,6 +134,36 @@ breakdowns, which every store supports. Query them at `GET /stats/{shortID}`:
 
 Platform, device, browser, OS, and referrer are derived from the request.
 
+## MCP server
+
+The `mcpserver` subpackage exposes the same operations as [MCP](https://modelcontextprotocol.io)
+tools, built on the official [Go SDK](https://github.com/modelcontextprotocol/go-sdk).
+
+| Tool | Does |
+| --- | --- |
+| `create_link` | Create a short link with optional preview fields and expiry |
+| `get_link` | Destination, preview fields, and click count |
+| `list_links` | Links with click counts, optionally by type (default 50) |
+| `link_stats` | Click breakdowns by platform, referrer, and day |
+| `delete_link` | Soft-delete a link |
+| `list_types` | Link types `create_link` accepts |
+
+Mount it next to the HTTP handler:
+
+```go
+import "github.com/yinebebt/deeplink/mcpserver"
+
+mux.Handle("/mcp", mcpserver.Handler(service, nil))
+```
+
+It serves stateless streamable HTTP and does not authenticate. `cmd/deeplink`
+serves it at `/mcp` behind `DEEPLINK_API_KEY`. To connect Claude Code:
+
+```bash
+claude mcp add --transport http deeplink https://link.example.com/mcp \
+  --header "Authorization: Bearer $DEEPLINK_API_KEY"
+```
+
 ## HTTP routes
 
 | Method | Path | Description |
@@ -162,8 +193,8 @@ and `assetlinks.json` files in `<TemplateDir>/.well-known/`.
 
 `cmd/deeplink` reads its configuration from environment variables — see
 [`.env.example`](.env.example) for the full list with defaults. Setting
-`DEEPLINK_API_KEY` enables auth on mutating endpoints and on `GET /links`
-and `GET /stats/{id}`, sent as `Authorization: Bearer <key>` or `X-API-Key`.
+`DEEPLINK_API_KEY` enables auth on mutating endpoints, on `GET /links`
+and `GET /stats/{id}`, and on `/mcp`, sent as `Authorization: Bearer <key>` or `X-API-Key`.
 Preview and redirect GETs stay public. Rotate the key if it has ever been
 pasted into chat or committed.
 
