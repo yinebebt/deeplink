@@ -3,14 +3,62 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>deeplink — smart links that open the right app</title>
-    <meta name="description" content="deeplink is a self-hostable short-link & deep-link service for Go: app deep links with store fallback, social preview pages, and click analytics." />
+    <title>deeplink: self-hosted deep links and short links for Go</title>
+    <meta name="description" content="Open-source Go library and server for short links that open the right app, with store fallback, Open Graph previews, click analytics, an MCP server for AI agents, and API keys you can rotate without downtime." />
+    <link rel="canonical" href="https://link.yinebebt.com/" />
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f172a'/%3E%3Cpath d='M20 9h-6a4 4 0 0 0 0 8h4a4 4 0 0 1 0 8h-6' fill='none' stroke='%2338bdf8' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://link.yinebebt.com/" />
+    <meta property="og:site_name" content="deeplink" />
+    <meta property="og:title" content="deeplink: short links that open the right app" />
+    <meta property="og:description" content="Self-hosted deep links for Go: store fallback, social previews, click analytics, and an MCP server for AI agents." />
+    <meta property="og:image" content="https://pub-467dec55a7a04f39ae65a63b83f60dc0.r2.dev/deeplink-preview.png" />
+    <meta property="og:image:width" content="1600" />
+    <meta property="og:image:height" content="800" />
+    <meta property="og:image:alt" content="deeplink: a short link resolving to an Open Graph preview and an app redirect" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@yinebebt_" />
+    <meta name="twitter:title" content="deeplink: short links that open the right app" />
+    <meta name="twitter:description" content="Self-hosted deep links for Go: store fallback, social previews, click analytics, and an MCP server for AI agents." />
+    <meta name="twitter:image" content="https://pub-467dec55a7a04f39ae65a63b83f60dc0.r2.dev/deeplink-preview.png" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareSourceCode",
+        "name": "deeplink",
+        "description": "Open-source Go library and server for deep links, short links, Open Graph previews, click analytics, and an MCP server for AI agents.",
+        "url": "https://link.yinebebt.com/",
+        "codeRepository": "https://github.com/yinebebt/deeplink",
+        "programmingLanguage": "Go",
+        "license": "https://opensource.org/licenses/MIT",
+        "author": { "@type": "Person", "name": "Yinebeb Tariku", "url": "https://yinebebt.com" }
+      }
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Replaced by the app on load; crawlers that don't run JavaScript read this. -->
+    <div id="root">
+      <main>
+        <h1>Short links that open the right app.</h1>
+        <p>deeplink is an open-source Go library and self-hostable server for deep links.</p>
+        <ul>
+          <li>Smart deep links: one URL opens your iOS or Android app, with store or web fallback.</li>
+          <li>Rich social previews with Open Graph, Twitter Card, and fediverse tags.</li>
+          <li>Click analytics by platform, referrer, and day, with no third-party tracker.</li>
+          <li>Built for AI agents: an MCP server to create, list, and inspect links.</li>
+          <li>API keys that rotate without a restart, with a grace period for clients.</li>
+          <li>SQLite, Redis, or in-memory storage, with link expiry.</li>
+        </ul>
+        <p><a href="https://github.com/yinebebt/deeplink">Source on GitHub</a> · <a href="https://pkg.go.dev/github.com/yinebebt/deeplink">Go reference</a></p>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -55,6 +55,14 @@ const FEATURES = [
     body: "Every visit is captured off the redirect path — clicks by platform, referrer, and day, with no third-party tracker.",
   },
   {
+    title: "Built for AI agents",
+    body: "An MCP server exposes links as tools, so Claude or any MCP client can create, list, and inspect links on your behalf.",
+  },
+  {
+    title: "Keys that rotate",
+    body: "Rotate the API key without a restart. The old key keeps working through a grace period while clients switch.",
+  },
+  {
     title: "Pluggable stores & expiry",
     body: "In-memory, Redis, or SQLite — same feature set. Set an expiry and links self-destruct. Core ships with one dependency.",
   },
@@ -88,7 +96,7 @@ export default function Landing() {
             <h1 className="lp-title">Short links that open the right app.</h1>
             <p className="lp-lede">
               Self-hostable deep links for Go — store fallback, social previews,
-              and click analytics.
+              click analytics, and an MCP server for AI agents.
             </p>
           </div>
           <div className="lp-terminal" aria-hidden="true">
@@ -96,6 +104,7 @@ export default function Landing() {
               <span /><span /><span />
             </div>
             <pre className="lp-terminal-body">{`$ curl -X POST https://link.yinebebt.com/shorten \\
+    -H "X-API-Key: $KEY" \\
     -d '{"type":"redirect","url":"https://example.com/docs"}'
 
 { "short_url": "https://link.yinebebt.com/aBcD12" }`}
