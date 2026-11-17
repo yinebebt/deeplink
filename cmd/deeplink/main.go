@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto/subtle"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,13 +16,23 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/redis/go-redis/v9"
 	"github.com/yinebebt/deeplink"
+	"github.com/yinebebt/deeplink/mcpserver"
 	"github.com/yinebebt/deeplink/redisstore"
 	"github.com/yinebebt/deeplink/sqlitestore"
+	"github.com/yinebebt/keyring"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "keys" {
+		if err := runKeys(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		slog.New(slog.NewTextHandler(os.Stderr, nil)).Error("deeplink failed", "error", err)
 		os.Exit(1)
@@ -43,7 +53,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	store, closeStore, err := buildStore(ctx, logger)
+	store, keyStore, closeStore, err := buildStore(ctx, logger)
 	if err != nil {
 		return err
 	}
@@ -77,14 +87,21 @@ func run() error {
 	defer service.Close() //nolint:errcheck
 	service.Register(deeplink.RedirectProcessor{})
 
+	if err := seedAPIKey(ctx, keyStore, os.Getenv("DEEPLINK_API_KEY"), logger); err != nil {
+		return err
+	}
+
 	mux := http.NewServeMux()
 	mux.Handle("/", service.Handler())
+	// The SDK's DNS-rebinding check blocks requests from a reverse proxy;
+	// /mcp always needs the API key, which covers that risk.
+	mux.Handle("/mcp", mcpserver.Handler(service, &mcp.StreamableHTTPOptions{
+		Stateless:                  true,
+		JSONResponse:               true,
+		DisableLocalhostProtection: true,
+	}))
 
-	var handler http.Handler = mux
-	if apiKey := os.Getenv("DEEPLINK_API_KEY"); apiKey != "" {
-		handler = withAPIKey(handler, apiKey)
-		logger.Info("API key protection enabled for mutating endpoints and link list/stats")
-	}
+	handler := withAPIKey(mux, keyStore, logger)
 
 	server := &http.Server{
 		Addr:         listenAddr,
@@ -124,18 +141,31 @@ func run() error {
 }
 
 // buildStore constructs the store named by DEEPLINK_STORE (default "sqlite"),
-// returning it with a cleanup func. SQLite is persistent and zero-infra;
-// redis suits multi-instance setups; memory is non-persistent (dev/tests).
-func buildStore(ctx context.Context, logger *slog.Logger) (deeplink.Store, func(), error) {
+// returning it, the API key store on the same backend, and a cleanup func.
+// SQLite is persistent and zero-infra; redis suits multi-instance setups;
+// memory is non-persistent (dev/tests).
+func buildStore(ctx context.Context, logger *slog.Logger) (deeplink.Store, keyring.Store, func(), error) {
 	switch backend := env("DEEPLINK_STORE", "sqlite"); backend {
 	case "sqlite":
 		dsn := env("DEEPLINK_SQLITE_DSN", "deeplink.db")
-		store, err := sqlitestore.New(dsn) //nolint:contextcheck // schema init is a one-shot at startup
+		// Open the DB here so the API key table can share it.
+		db, err := sql.Open("sqlite", dsn)
 		if err != nil {
-			return nil, nil, fmt.Errorf("open sqlite store: %w", err)
+			return nil, nil, nil, fmt.Errorf("open sqlite: %w", err)
+		}
+		db.SetMaxOpenConns(1) // as in sqlitestore.New
+		store, err := sqlitestore.NewWithDB(ctx, db)
+		if err != nil {
+			_ = db.Close()
+			return nil, nil, nil, fmt.Errorf("open sqlite store: %w", err)
+		}
+		keyStore, err := sqlKeyStore(ctx, db)
+		if err != nil {
+			_ = db.Close()
+			return nil, nil, nil, err
 		}
 		logger.Info("using sqlite store", "dsn", dsn)
-		return store, func() { _ = store.Close() }, nil
+		return store, keyStore, func() { _ = db.Close() }, nil
 
 	case "redis":
 		client := redis.NewClient(&redis.Options{
@@ -147,10 +177,10 @@ func buildStore(ctx context.Context, logger *slog.Logger) (deeplink.Store, func(
 		defer cancel()
 		if err := client.Ping(pingCtx).Err(); err != nil {
 			_ = client.Close()
-			return nil, nil, fmt.Errorf("ping redis: %w", err)
+			return nil, nil, nil, fmt.Errorf("ping redis: %w", err)
 		}
 		logger.Info("using redis store")
-		return redisstore.New(client), func() {
+		return redisstore.New(client), redisKeyStore(client), func() {
 			if err := client.Close(); err != nil {
 				logger.Warn("failed to close redis client", "error", err)
 			}
@@ -158,10 +188,10 @@ func buildStore(ctx context.Context, logger *slog.Logger) (deeplink.Store, func(
 
 	case "memory":
 		logger.Warn("using in-memory store: links do not survive restart")
-		return deeplink.NewMemoryStore(), func() {}, nil
+		return deeplink.NewMemoryStore(), memKeyStore(), func() {}, nil
 
 	default:
-		return nil, nil, fmt.Errorf("unknown DEEPLINK_STORE %q (want sqlite, redis, or memory)", backend)
+		return nil, nil, nil, fmt.Errorf("unknown DEEPLINK_STORE %q (want sqlite, redis, or memory)", backend)
 	}
 }
 
@@ -205,23 +235,17 @@ func discoverTemplateDir(configured string) string {
 	return ""
 }
 
-// withAPIKey protects mutating requests (POST, PATCH, DELETE) and the
-// dashboard list/stats GETs with a constant-time token check. Accepts both
-// "Authorization: Bearer <key>" and "X-API-Key: <key>". Preview and redirect
-// GETs stay public.
-func withAPIKey(next http.Handler, key string) http.Handler {
-	keyBytes := []byte(key)
+// withAPIKey puts keyring's key check on mutating requests (POST, PATCH,
+// DELETE), the dashboard list/stats GETs, and every /mcp request. Preview and
+// redirect GETs stay public.
+func withAPIKey(next http.Handler, keys keyring.Store, logger *slog.Logger) http.Handler {
+	protected := keyring.Middleware(
+		keyring.New(keys, 0), // grace only matters to Rotate
+		keyring.OnError(func(_ *http.Request, err error) { logger.Error("read API keys", "error", err) }),
+	)(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !requiresAPIKey(r.Method, r.URL.Path) {
-			next.ServeHTTP(w, r)
-			return
-		}
-		token := r.Header.Get("X-API-Key")
-		if token == "" {
-			token = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		}
-		if subtle.ConstantTimeCompare([]byte(token), keyBytes) != 1 {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		if requiresAPIKey(r.Method, r.URL.Path) {
+			protected.ServeHTTP(w, r)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -229,6 +253,9 @@ func withAPIKey(next http.Handler, key string) http.Handler {
 }
 
 func requiresAPIKey(method, path string) bool {
+	if path == "/mcp" {
+		return true
+	}
 	switch method {
 	case http.MethodPost, http.MethodPatch, http.MethodDelete:
 		return true

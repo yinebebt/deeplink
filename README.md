@@ -1,6 +1,7 @@
 # deeplink
 
-Short link generation, click analytics, link expiry, and OG preview pages for Go.
+Short link generation, click analytics, link expiry, and OG preview pages for Go,
+with MCP tools so AI clients can manage links too.
 Pluggable processors; in-memory, Redis, or SQLite storage; one dependency in the core.
 
 [![CI](https://github.com/yinebebt/deeplink/actions/workflows/ci.yml/badge.svg)](https://github.com/yinebebt/deeplink/actions/workflows/ci.yml)
@@ -70,11 +71,11 @@ See [example/custom](example/custom/) for a working custom processor with tests.
 SQLite by default (zero infra). Redis is optional for multi-instance setups:
 
 ```bash
-go run ./cmd/deeplink
+DEEPLINK_API_KEY=dev-key go run ./cmd/deeplink   # writes send -H "X-API-Key: dev-key"
 
 # Redis:
 docker compose up -d
-DEEPLINK_STORE=redis go run ./cmd/deeplink
+DEEPLINK_STORE=redis DEEPLINK_API_KEY=dev-key go run ./cmd/deeplink
 ```
 
 ## Stores
@@ -133,6 +134,36 @@ breakdowns, which every store supports. Query them at `GET /stats/{shortID}`:
 
 Platform, device, browser, OS, and referrer are derived from the request.
 
+## MCP server
+
+The `mcpserver` subpackage exposes the same operations as [MCP](https://modelcontextprotocol.io)
+tools, built on the official [Go SDK](https://github.com/modelcontextprotocol/go-sdk).
+
+| Tool | Does |
+| --- | --- |
+| `create_link` | Create a short link with optional preview fields and expiry |
+| `get_link` | Destination, preview fields, and click count |
+| `list_links` | Links with click counts, optionally by type (default 50) |
+| `link_stats` | Click breakdowns by platform, referrer, and day |
+| `delete_link` | Soft-delete a link |
+| `list_types` | Link types `create_link` accepts |
+
+Mount it next to the HTTP handler:
+
+```go
+import "github.com/yinebebt/deeplink/mcpserver"
+
+mux.Handle("/mcp", mcpserver.Handler(service, nil))
+```
+
+It serves stateless streamable HTTP and does not authenticate. `cmd/deeplink`
+serves it at `/mcp` behind the [API key](#rotating-the-key). To connect Claude Code:
+
+```bash
+claude mcp add --transport http deeplink https://link.example.com/mcp \
+  --header "Authorization: Bearer <key>"
+```
+
 ## HTTP routes
 
 | Method | Path | Description |
@@ -161,11 +192,26 @@ and `assetlinks.json` files in `<TemplateDir>/.well-known/`.
 ## Configuration
 
 `cmd/deeplink` reads its configuration from environment variables — see
-[`.env.example`](.env.example) for the full list with defaults. Setting
-`DEEPLINK_API_KEY` enables auth on mutating endpoints and on `GET /links`
-and `GET /stats/{id}`, sent as `Authorization: Bearer <key>` or `X-API-Key`.
-Preview and redirect GETs stay public. Rotate the key if it has ever been
-pasted into chat or committed.
+[`.env.example`](.env.example) for the full list with defaults. Mutating
+endpoints, `GET /links`, `GET /stats/{id}` and `/mcp` always need the API key,
+sent as `Authorization: Bearer <key>` or `X-API-Key`; with no key set they
+return 401. Preview and redirect GETs stay public. Rotate the key if it has
+ever been pasted into chat or committed.
+
+### Rotating the key
+
+The key lives in the store, seeded from `DEEPLINK_API_KEY` on first start
+(or created by the first `deeplink keys rotate`); after that the store wins. Rotate without a restart, running `deeplink keys`
+with the server's environment and working directory (the default SQLite path
+is relative):
+
+```bash
+deeplink keys rotate -grace 24h   # prints the new key; the old one works for 24h
+deeplink keys revoke              # end the grace period now
+deeplink keys status
+```
+
+Not available with the memory store.
 
 ## Templates
 

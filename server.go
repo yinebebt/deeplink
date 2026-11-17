@@ -64,27 +64,9 @@ func (s *Service) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	processor := s.registry.Get(payload.Type)
-	if processor == nil {
-		s.respondError(w, ErrInvalidType)
-		return
-	}
-
-	if err := processor.Process(r.Context(), &payload); err != nil {
-		s.respondError(w, err)
-		return
-	}
-
-	shortURL, err := s.shortenURL(r.Context(), &payload)
+	shortURL, err := s.Create(r.Context(), &payload)
 	if err != nil {
-		// Preserve a deliberate status (e.g. 400 for a bad expires_at);
-		// wrap anything else as a 500.
-		if appErr, ok := errors.AsType[*Error](err); ok {
-			s.respondError(w, appErr)
-			return
-		}
-		s.config.Logger.Error("failed to shorten URL", "error", err, "type", payload.Type)
-		s.respondError(w, NewError(err, http.StatusInternalServerError, "failed to shorten URL"))
+		s.respondError(w, err)
 		return
 	}
 
@@ -202,14 +184,12 @@ func (s *Service) handleRedirect(w http.ResponseWriter, r *http.Request) {
 func (s *Service) handleStats(w http.ResponseWriter, r *http.Request) {
 	shortID := r.PathValue("shortID")
 
-	payload, err := s.config.Store.Get(r.Context(), shortID)
-	if err != nil || payload.DeletedAt != "" {
-		s.config.Logger.Warn("stats link not found", "shortID", shortID, "error", err)
+	stats, err := s.Stats(r.Context(), shortID)
+	if errors.Is(err, ErrNotFound) {
+		s.config.Logger.Warn("stats link not found", "shortID", shortID)
 		http.Error(w, "link not found", http.StatusNotFound)
 		return
 	}
-
-	stats, err := s.config.Store.Stats(r.Context(), shortID)
 	if err != nil {
 		s.config.Logger.Error("failed to fetch stats", "error", err, "shortID", shortID)
 		http.Error(w, "stats error", http.StatusInternalServerError)
@@ -264,50 +244,33 @@ func (s *Service) handleLinkDetail(w http.ResponseWriter, r *http.Request) {
 	linkType := r.PathValue("type")
 	shortID := r.PathValue("shortID")
 
-	payload, err := s.config.Store.Get(r.Context(), shortID)
-	if err != nil || payload.DeletedAt != "" {
-		s.config.Logger.Warn("link not found", "shortID", shortID, "error", err)
+	link, err := s.Get(r.Context(), shortID)
+	if err != nil {
+		s.config.Logger.Warn("link not found", "shortID", shortID)
 		http.Error(w, "link not found", http.StatusNotFound)
 		return
 	}
 
-	if !strings.EqualFold(payload.Type, linkType) {
-		s.config.Logger.Warn("link type mismatch", "shortID", shortID, "have", payload.Type, "want", linkType)
+	if !strings.EqualFold(link.Type, linkType) {
+		s.config.Logger.Warn("link type mismatch", "shortID", shortID, "have", link.Type, "want", linkType)
 		http.Error(w, "link type mismatch", http.StatusBadRequest)
 		return
 	}
 
-	clicks, _ := s.config.Store.Clicks(r.Context(), shortID)
-	respondJSON(w, http.StatusOK, LinkResponse{
-		Link:      payload,
-		ShortLink: s.config.BaseURL + shortID,
-		Clicks:    clicks,
-	})
+	respondJSON(w, http.StatusOK, link)
 	s.config.Logger.Info("link detail fetched", "shortID", shortID, "duration", time.Since(start).String())
 }
 
-// linkListAllCap bounds GET /links so a runaway store cannot OOM clients
-// that load the full list (e.g. the dashboard on the web branch).
-const linkListAllCap = 500
-
 // handleLinkListAll returns every non-deleted link across all registered
-// types (full list, not a paginated API).
+// types, up to [ListCap] (full list, not a paginated API).
 func (s *Service) handleLinkListAll(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
-	out := make([]LinkResponse, 0)
-	for _, linkType := range s.registry.Types() {
-		remaining := linkListAllCap - len(out)
-		if remaining <= 0 {
-			break
-		}
-		batch, err := s.listLinksByType(r.Context(), linkType, remaining)
-		if err != nil {
-			s.config.Logger.Error("failed to list links", "error", err, "type", linkType)
-			http.Error(w, "list error", http.StatusInternalServerError)
-			return
-		}
-		out = append(out, batch...)
+	out, err := s.List(r.Context(), "", 0)
+	if err != nil {
+		s.config.Logger.Error("failed to list links", "error", err)
+		http.Error(w, "list error", http.StatusInternalServerError)
+		return
 	}
 
 	respondJSON(w, http.StatusOK, out)
@@ -414,7 +377,7 @@ func (s *Service) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.config.Store.Delete(r.Context(), shortID); err != nil {
+	if err := s.Delete(r.Context(), shortID); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			s.respondError(w, ErrNotFound)
 			return
