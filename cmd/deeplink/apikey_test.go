@@ -1,10 +1,26 @@
 package main
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/yinebebt/keyring"
 )
+
+var discard = slog.New(slog.DiscardHandler)
+
+// storeWith returns a key store holding ks.
+func storeWith(t *testing.T, ks keyring.KeySet) keyring.Store {
+	t.Helper()
+	store := memKeyStore()
+	if err := store.Put(context.Background(), ks); err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
 
 func TestRequiresAPIKey(t *testing.T) {
 	t.Parallel()
@@ -37,13 +53,36 @@ func TestRequiresAPIKey(t *testing.T) {
 	}
 }
 
+// With no key anywhere, protected routes are refused rather than open.
+func TestWithAPIKey_EmptyStore(t *testing.T) {
+	t.Parallel()
+
+	h := withAPIKey(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}), memKeyStore(), discard)
+
+	for _, tc := range []struct {
+		method, path string
+		want         int
+	}{
+		{http.MethodPost, "/shorten", http.StatusUnauthorized},
+		{http.MethodGet, "/abc123", http.StatusNoContent},
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
+		if rec.Code != tc.want {
+			t.Fatalf("%s %s: status = %d, want %d", tc.method, tc.path, rec.Code, tc.want)
+		}
+	}
+}
+
 func TestWithAPIKey_ProtectsList(t *testing.T) {
 	t.Parallel()
 
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
-	h := withAPIKey(inner, "secret")
+	h := withAPIKey(inner, storeWith(t, keyring.KeySet{Current: "secret"}), discard)
 
 	req := httptest.NewRequest(http.MethodGet, "/links", nil)
 	rec := httptest.NewRecorder()

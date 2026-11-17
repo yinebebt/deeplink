@@ -6,6 +6,7 @@ require (
 	github.com/matoous/go-nanoid/v2 v2.1.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/redis/go-redis/v9 v9.23.0
+	github.com/yinebebt/keyring v0.1.0
 	modernc.org/sqlite v1.61.1
 )
 
