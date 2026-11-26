@@ -164,6 +164,10 @@ claude mcp add --transport http deeplink https://link.example.com/mcp \
   --header "Authorization: Bearer <key>"
 ```
 
+For per-channel campaign links and click reports from your agent, use the
+[campaign links skill](skills/deeplink-campaign-links/SKILL.md): copy the folder into
+`~/.claude/skills/`.
+
 ## HTTP routes
 
 | Method | Path | Description |
